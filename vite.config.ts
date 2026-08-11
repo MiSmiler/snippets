@@ -6,6 +6,11 @@ export default defineConfig({
   server: {
     port: 1420,
     strictPort: true,
+    // Never watch Rust build artifacts: cargo holds them locked while
+    // compiling/running, and fs.watch on a locked file crashes on Windows.
+    watch: {
+      ignored: ["**/src-tauri/**"],
+    },
   },
   build: {
     target: "es2022",
