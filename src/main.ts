@@ -26,6 +26,7 @@ import {
 import { insertNewlineContinueMarkup, markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { wordNavCommands } from "./word-nav";
 
 const SAVE_DEBOUNCE_MS = 500;
 const DEFAULT_FONT_SIZE = 16;
@@ -150,6 +151,10 @@ async function main(): Promise<void> {
     }
   }
 
+  // Ctrl+ArrowLeft/Right (+Shift selection, +Backspace/Delete deletion) jump
+  // between Chinese words instead of skipping a whole CJK run.
+  const wordNav = wordNavCommands();
+
   const view = new EditorView({
     parent: document.getElementById("editor")!,
     state: EditorState.create({
@@ -175,6 +180,18 @@ async function main(): Promise<void> {
             { key: "Alt-ArrowUp", run: moveLineUp },
             { key: "Alt-ArrowDown", run: moveLineDown },
             { key: "Enter", run: insertNewlineContinueMarkup },
+            {
+              key: "Mod-ArrowLeft",
+              run: wordNav.cursorLeft,
+              shift: wordNav.selectLeft,
+            },
+            {
+              key: "Mod-ArrowRight",
+              run: wordNav.cursorRight,
+              shift: wordNav.selectRight,
+            },
+            { key: "Mod-Backspace", run: wordNav.deleteBackward },
+            { key: "Mod-Delete", run: wordNav.deleteForward },
             {
               key: "Mod-,",
               run: () => {

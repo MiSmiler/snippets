@@ -36,6 +36,9 @@ npm run icon         # 重新生成应用图标
 | --- | --- |
 | `Tab` / `Shift+Tab` | 整行缩进 / 取消缩进（不插入 Tab 字符） |
 | `Alt+↑` / `Alt+↓` | 上移 / 下移当前行（有选区则移动整个选区） |
+| `Ctrl+←` / `Ctrl+→` | 光标按词移动（中文按词分词） |
+| `Ctrl+Shift+←` / `Ctrl+Shift+→` | 按词扩展选区（中文按词分词） |
+| `Ctrl+Backspace` / `Ctrl+Delete` | 按词删除（中文按词分词） |
 | `Ctrl+Z` / `Ctrl+Y` | 撤销 / 重做 |
 | `Ctrl+A` | 全选 |
 | `Enter` | 列表行内回车自动延续 `- ` 前缀 |
