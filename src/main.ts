@@ -24,7 +24,11 @@ import {
   indentUnit,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { insertNewlineContinueMarkup, markdown } from "@codemirror/lang-markdown";
+import {
+  deleteMarkupBackward,
+  insertNewlineContinueMarkupCommand,
+  markdown,
+} from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { joinToEvent } from "./undo-history";
@@ -170,18 +174,30 @@ async function main(): Promise<void> {
         dropCursor(),
         indentOnInput(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        markdown({ extensions: [GFM] }),
+        // addKeymap: false: markdown() would otherwise register its own
+        // Prec.high keymap (Enter -> unconfigured insertNewlineContinueMarkup,
+        // Backspace -> deleteMarkupBackward) before the keymap below. At
+        // equal precedence the earlier registration wins, which would shadow
+        // our configured Enter binding entirely. Take over both bindings
+        // explicitly instead.
+        markdown({ extensions: [GFM], addKeymap: false }),
         indentUnit.of("  "),
         EditorView.lineWrapping,
         // High-precedence keymap: Tab indents the whole line (no tab character
         // inserted), Alt+arrows move lines, and the Enter binding falls back to
         // defaultKeymap's insertNewline when not inside a list/quote.
+        // nonTightLists: false makes Enter on any empty list item (including
+        // the second item of a list) remove the marker and exit the list,
+        // instead of upstream's default of inserting a blank line above the
+        // second item to start a non-tight list. Backspace keeps
+        // markdown()'s deleteMarkupBackward (see addKeymap: false above).
         Prec.high(
           keymap.of([
             indentWithTab,
             { key: "Alt-ArrowUp", run: moveLineUp },
             { key: "Alt-ArrowDown", run: moveLineDown },
-            { key: "Enter", run: insertNewlineContinueMarkup },
+            { key: "Enter", run: insertNewlineContinueMarkupCommand({ nonTightLists: false }) },
+            { key: "Backspace", run: deleteMarkupBackward },
             {
               key: "Mod-ArrowLeft",
               run: wordNav.cursorLeft,
