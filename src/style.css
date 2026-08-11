@@ -1,0 +1,66 @@
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1f2937;
+  --gutter-bg: #f6f8fa;
+  --gutter-fg: #9aa4b0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #282c34;
+    --fg: #abb2bf;
+    --gutter-bg: #23262e;
+    --gutter-fg: #5c6370;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+}
+
+#editor {
+  height: 100vh;
+}
+
+#editor .cm-editor {
+  height: 100%;
+  background: var(--bg);
+}
+
+.cm-gutters {
+  background: var(--gutter-bg);
+  color: var(--gutter-fg);
+  border-right: none;
+}
+
+.cm-activeLineGutter {
+  background: transparent;
+}
+
+#toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  max-width: 60vw;
+  padding: 8px 14px;
+  border-radius: 6px;
+  background: #b91c1c;
+  color: #ffffff;
+  font: 13px/1.5 system-ui, sans-serif;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
+  z-index: 10;
+}
+
+#toast[hidden] {
+  display: none;
+}
