@@ -18,7 +18,7 @@ npm install          # 安装依赖
 npm run tauri dev    # 开发模式（前端热重载）
 npm run tauri build  # 构建发布版 exe（内部先跑 tsc + vite）
 npm run build        # 仅构建前端
-npm run icon         # 重新生成应用图标
+npm run icon         # 重新生成应用图标（light + dark 两套）
 ```
 
 - 产物：`src-tauri/target/release/daytasks.exe`
