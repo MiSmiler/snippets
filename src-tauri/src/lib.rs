@@ -1,7 +1,10 @@
 use std::{fs, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
+
+#[cfg(windows)]
+mod single_instance;
 
 const FILE_NAME: &str = "data.md";
 const SETTINGS_FILE_NAME: &str = "settings.json";
@@ -100,17 +103,53 @@ fn save_settings(settings: Settings) -> Result<(), String> {
     Ok(())
 }
 
+/// Make the dev build recognizable in the taskbar / Alt-Tab. Called both in
+/// setup (initial title) and on page load, because the HTML `<title>`
+/// overrides the window title once the page finishes loading.
+#[cfg(debug_assertions)]
+fn set_dev_window_title<R: tauri::Runtime, M: tauri::Manager<R>>(
+    manager: &M,
+) -> tauri::Result<()> {
+    if let Some(window) = manager.get_webview_window("main") {
+        let product = manager.config().product_name.as_deref().unwrap_or("daytasks");
+        window.set_title(&format!("{product} - dev"))?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // A second instance focuses the existing window instead of starting
-            // a competing writer for data.md.
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
+        .setup(|app| {
+            #[cfg(windows)]
+            // A second instance of the same build profile focuses the existing
+            // window instead of starting a competing writer for data.md. The
+            // guard is scoped per profile (see single_instance.rs), so a debug
+            // build and the release build can run side by side.
+            single_instance::init(&*app, |app, _args, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_focus();
+                }
+            })?;
+
+            #[cfg(debug_assertions)]
+            set_dev_window_title(app)?;
+
+            Ok(())
+        })
+        .on_page_load(|_webview, _payload| {
+            #[cfg(debug_assertions)]
+            {
+                let _ = set_dev_window_title(_webview);
             }
-        }))
+        })
         .invoke_handler(tauri::generate_handler![load_file, save_file, load_settings, save_settings])
-        .run(tauri::generate_context!())
-        .expect("error while running daytasks");
+        .build(tauri::generate_context!())
+        .expect("error while building daytasks")
+        .run(|app, event| {
+            #[cfg(windows)]
+            if let RunEvent::Exit = event {
+                single_instance::destroy(app);
+            }
+        });
 }

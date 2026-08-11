@@ -23,6 +23,7 @@ npm run icon         # 重新生成应用图标（light + dark 两套）
 
 - 产物：`src-tauri/target/release/daytasks.exe`
 - 开发模式的 `data.md` 在 `src-tauri/target/debug/` 下，与正式数据隔离
+- 单实例限制按构建类型隔离（见 `single_instance.rs`）：`npm run tauri dev` 的调试版可与日常使用的 release 版同时运行，互不抢占；dev 窗口标题带 `- dev` 后缀便于区分
 
 ## 用户
 
