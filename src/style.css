@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #ffffff;
   --fg: #1f2937;
   --gutter-bg: #f6f8fa;
@@ -10,17 +10,16 @@
   --btn-hover: #e5e7eb;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #282c34;
-    --fg: #abb2bf;
-    --gutter-bg: #23262e;
-    --gutter-fg: #5c6370;
-    --card-bg: #2c313a;
-    --card-border: #3e4451;
-    --btn-bg: #3a4048;
-    --btn-hover: #464c55;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #282c34;
+  --fg: #abb2bf;
+  --gutter-bg: #23262e;
+  --gutter-fg: #5c6370;
+  --card-bg: #2c313a;
+  --card-border: #3e4451;
+  --btn-bg: #3a4048;
+  --btn-hover: #464c55;
 }
 
 * {
@@ -103,6 +102,22 @@ body {
   gap: 8px;
   font: 14px/1 Consolas, 'Microsoft YaHei', monospace;
   color: var(--fg);
+}
+
+.settings-label {
+  flex: 1;
+  font: 13px/1 system-ui, sans-serif;
+  color: var(--fg);
+}
+
+.settings-row select {
+  padding: 4px 8px;
+  border: 1px solid var(--card-border);
+  border-radius: 5px;
+  background: var(--btn-bg);
+  color: var(--fg);
+  font: 13px/1.5 system-ui, sans-serif;
+  cursor: pointer;
 }
 
 .settings-row button {

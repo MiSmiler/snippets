@@ -34,7 +34,10 @@ const MAX_FONT_SIZE = 32;
 
 interface Settings {
   font_size: number;
+  theme: ThemeChoice;
 }
+
+type ThemeChoice = "light" | "dark" | "system";
 
 const toast = document.getElementById("toast")!;
 
@@ -56,22 +59,30 @@ async function loadInitialContent(): Promise<string> {
   }
 }
 
-async function loadSettings(): Promise<number> {
+// Avoid a flash of the wrong theme: assume system preference until settings load.
+document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+  ? "dark"
+  : "light";
+
+async function loadSettings(): Promise<Settings> {
   try {
     const settings = await invoke<Settings>("load_settings");
     const size = settings.font_size;
-    if (typeof size === "number" && size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE) {
-      return size;
+    if (typeof size !== "number" || size < MIN_FONT_SIZE || size > MAX_FONT_SIZE) {
+      settings.font_size = DEFAULT_FONT_SIZE;
     }
-    return DEFAULT_FONT_SIZE;
+    if (settings.theme !== "light" && settings.theme !== "dark" && settings.theme !== "system") {
+      settings.theme = "system";
+    }
+    return settings;
   } catch (error) {
     showToast(`Cannot read settings: ${String(error)}`);
-    return DEFAULT_FONT_SIZE;
+    return { font_size: DEFAULT_FONT_SIZE, theme: "system" };
   }
 }
 
 async function main(): Promise<void> {
-  const [initialContent, initialFontSize] = await Promise.all([
+  const [initialContent, settings] = await Promise.all([
     loadInitialContent(),
     loadSettings(),
   ]);
@@ -80,11 +91,32 @@ async function main(): Promise<void> {
   const fontTheme = new Compartment();
   const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
 
-  let fontSize = initialFontSize;
+  let fontSize = settings.font_size;
+  let theme = settings.theme;
   let lastSaved = initialContent;
   let saveTimer: number | undefined;
   let saving = false;
   let pending = false;
+
+  function effectiveTheme(): "light" | "dark" {
+    if (theme === "system") return darkMode.matches ? "dark" : "light";
+    return theme;
+  }
+
+  function applyTheme(): void {
+    const effective = effectiveTheme();
+    document.documentElement.dataset.theme = effective;
+    view.dispatch({
+      effects: darkTheme.reconfigure(effective === "dark" ? oneDark : []),
+    });
+  }
+
+  function setTheme(next: ThemeChoice): void {
+    if (next === theme) return;
+    theme = next;
+    applyTheme();
+    void saveSettings();
+  }
 
   function applyFontSize(): void {
     view.dispatch({
@@ -112,7 +144,7 @@ async function main(): Promise<void> {
 
   async function saveSettings(): Promise<void> {
     try {
-      await invoke("save_settings", { settings: { font_size: fontSize } });
+      await invoke("save_settings", { settings: { font_size: fontSize, theme } });
     } catch (error) {
       showToast(`Failed to save settings: ${String(error)}`);
     }
@@ -181,7 +213,7 @@ async function main(): Promise<void> {
           ]),
         ),
         keymap.of(defaultKeymap),
-        darkTheme.of(darkMode.matches ? oneDark : []),
+        darkTheme.of(effectiveTheme() === "dark" ? oneDark : []),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) scheduleSave();
         }),
@@ -198,6 +230,9 @@ async function main(): Promise<void> {
       ],
     }),
   });
+
+  // Sync the saved theme (the early data-theme guess only knew the system value).
+  applyTheme();
 
   function scheduleSave(): void {
     if (saveTimer !== undefined) clearTimeout(saveTimer);
@@ -244,12 +279,10 @@ async function main(): Promise<void> {
     }
   }
 
-  function applyTheme(): void {
-    view.dispatch({
-      effects: darkTheme.reconfigure(darkMode.matches ? oneDark : []),
-    });
-  }
-  darkMode.addEventListener("change", applyTheme);
+  // React to system theme changes, but only when the user hasn't overridden it.
+  darkMode.addEventListener("change", () => {
+    if (theme === "system") applyTheme();
+  });
 
   // Save immediately when the window is hidden (e.g. minimized).
   document.addEventListener("visibilitychange", () => {
@@ -275,6 +308,11 @@ async function main(): Promise<void> {
   document.getElementById("font-minus")!.addEventListener("click", () => adjustFontSize(-1));
   document.getElementById("font-plus")!.addEventListener("click", () => adjustFontSize(1));
   document.getElementById("font-reset")!.addEventListener("click", resetFontSize);
+  const themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
+  themeSelect.value = theme;
+  themeSelect.addEventListener("change", () => {
+    setTheme(themeSelect.value as ThemeChoice);
+  });
   document.addEventListener("pointerdown", (event) => {
     if (!settingsEl.hidden && !settingsEl.contains(event.target as Node)) closeSettings();
   });

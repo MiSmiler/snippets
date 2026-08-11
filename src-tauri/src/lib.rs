@@ -31,12 +31,14 @@ fn settings_path() -> Result<PathBuf, String> {
 #[serde(default)]
 pub struct Settings {
     pub font_size: u32,
+    pub theme: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
             font_size: DEFAULT_FONT_SIZE,
+            theme: "system".to_string(),
         }
     }
 }
@@ -82,8 +84,13 @@ fn load_settings() -> Result<Settings, String> {
 
 #[tauri::command]
 fn save_settings(settings: Settings) -> Result<(), String> {
+    let theme = match settings.theme.as_str() {
+        "light" | "dark" | "system" => settings.theme,
+        _ => "system".to_string(),
+    };
     let clamped = Settings {
         font_size: settings.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE),
+        theme,
     };
     let text = serde_json::to_string_pretty(&clamped).map_err(|e| e.to_string())?;
     let path = settings_path()?;
