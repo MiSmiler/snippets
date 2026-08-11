@@ -4,6 +4,10 @@
   --fg: #1f2937;
   --gutter-bg: #f6f8fa;
   --gutter-fg: #9aa4b0;
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+  --btn-bg: #f3f4f6;
+  --btn-hover: #e5e7eb;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -12,6 +16,10 @@
     --fg: #abb2bf;
     --gutter-bg: #23262e;
     --gutter-fg: #5c6370;
+    --card-bg: #2c313a;
+    --card-border: #3e4451;
+    --btn-bg: #3a4048;
+    --btn-hover: #464c55;
   }
 }
 
@@ -63,4 +71,56 @@ body {
 
 #toast[hidden] {
   display: none;
+}
+
+#settings {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  padding: 16px 20px;
+  z-index: 20;
+  user-select: none;
+}
+
+#settings[hidden] {
+  display: none;
+}
+
+.settings-title {
+  font: 600 13px/1.5 system-ui, sans-serif;
+  color: var(--fg);
+  margin-bottom: 10px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 14px/1 Consolas, 'Microsoft YaHei', monospace;
+  color: var(--fg);
+}
+
+.settings-row button {
+  min-width: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 5px;
+  background: var(--btn-bg);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings-row button:hover {
+  background: var(--btn-hover);
+}
+
+#font-size-value {
+  min-width: 2ch;
+  text-align: center;
 }

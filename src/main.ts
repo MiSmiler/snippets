@@ -28,6 +28,13 @@ import { GFM } from "@lezer/markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
 
 const SAVE_DEBOUNCE_MS = 500;
+const DEFAULT_FONT_SIZE = 16;
+const MIN_FONT_SIZE = 10;
+const MAX_FONT_SIZE = 32;
+
+interface Settings {
+  font_size: number;
+}
 
 const toast = document.getElementById("toast")!;
 
@@ -49,16 +56,67 @@ async function loadInitialContent(): Promise<string> {
   }
 }
 
+async function loadSettings(): Promise<number> {
+  try {
+    const settings = await invoke<Settings>("load_settings");
+    const size = settings.font_size;
+    if (typeof size === "number" && size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE) {
+      return size;
+    }
+    return DEFAULT_FONT_SIZE;
+  } catch (error) {
+    showToast(`Cannot read settings: ${String(error)}`);
+    return DEFAULT_FONT_SIZE;
+  }
+}
+
 async function main(): Promise<void> {
-  const initialContent = await loadInitialContent();
+  const [initialContent, initialFontSize] = await Promise.all([
+    loadInitialContent(),
+    loadSettings(),
+  ]);
 
   const darkTheme = new Compartment();
+  const fontTheme = new Compartment();
   const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
 
+  let fontSize = initialFontSize;
   let lastSaved = initialContent;
   let saveTimer: number | undefined;
   let saving = false;
   let pending = false;
+
+  function applyFontSize(): void {
+    view.dispatch({
+      effects: fontTheme.reconfigure(
+        EditorView.theme({ "&": { fontSize: `${fontSize}px` } }),
+      ),
+    });
+  }
+
+  function setFontSize(next: number): void {
+    fontSize = next;
+    applyFontSize();
+    updateFontSizeLabel();
+    void saveSettings();
+  }
+
+  function adjustFontSize(delta: number): void {
+    const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, fontSize + delta));
+    if (next !== fontSize) setFontSize(next);
+  }
+
+  function resetFontSize(): void {
+    setFontSize(DEFAULT_FONT_SIZE);
+  }
+
+  async function saveSettings(): Promise<void> {
+    try {
+      await invoke("save_settings", { settings: { font_size: fontSize } });
+    } catch (error) {
+      showToast(`Failed to save settings: ${String(error)}`);
+    }
+  }
 
   const view = new EditorView({
     parent: document.getElementById("editor")!,
@@ -85,6 +143,41 @@ async function main(): Promise<void> {
             { key: "Alt-ArrowUp", run: moveLineUp },
             { key: "Alt-ArrowDown", run: moveLineDown },
             { key: "Enter", run: insertNewlineContinueMarkup },
+            {
+              key: "Mod-,",
+              run: () => {
+                toggleSettings();
+                return true;
+              },
+            },
+            {
+              key: "Mod-=",
+              run: () => {
+                adjustFontSize(1);
+                return true;
+              },
+            },
+            {
+              key: "Mod-+",
+              run: () => {
+                adjustFontSize(1);
+                return true;
+              },
+            },
+            {
+              key: "Mod--",
+              run: () => {
+                adjustFontSize(-1);
+                return true;
+              },
+            },
+            {
+              key: "Mod-0",
+              run: () => {
+                resetFontSize();
+                return true;
+              },
+            },
           ]),
         ),
         keymap.of(defaultKeymap),
@@ -93,15 +186,15 @@ async function main(): Promise<void> {
           if (update.docChanged) scheduleSave();
         }),
         EditorView.theme({
-          "&": { height: "100%", fontSize: "15px" },
+          "&": { height: "100%" },
           ".cm-scroller": {
-            fontFamily:
-              "'Cascadia Code', Consolas, ui-monospace, 'SF Mono', Menlo, monospace",
+            fontFamily: "'Consolas', 'Microsoft YaHei', monospace",
             lineHeight: "1.65",
           },
           ".cm-content": { padding: "14px 0" },
           "&.cm-focused": { outline: "none" },
         }),
+        fontTheme.of(EditorView.theme({ "&": { fontSize: `${fontSize}px` } })),
       ],
     }),
   });
@@ -162,6 +255,33 @@ async function main(): Promise<void> {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) void flushSave();
   });
+
+  // Font size settings popover.
+  const settingsEl = document.getElementById("settings")!;
+  const fontSizeLabel = document.getElementById("font-size-value")!;
+
+  function updateFontSizeLabel(): void {
+    fontSizeLabel.textContent = String(fontSize);
+  }
+
+  function toggleSettings(): void {
+    settingsEl.hidden = !settingsEl.hidden;
+  }
+
+  function closeSettings(): void {
+    settingsEl.hidden = true;
+  }
+
+  document.getElementById("font-minus")!.addEventListener("click", () => adjustFontSize(-1));
+  document.getElementById("font-plus")!.addEventListener("click", () => adjustFontSize(1));
+  document.getElementById("font-reset")!.addEventListener("click", resetFontSize);
+  document.addEventListener("pointerdown", (event) => {
+    if (!settingsEl.hidden && !settingsEl.contains(event.target as Node)) closeSettings();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !settingsEl.hidden) closeSettings();
+  });
+  updateFontSizeLabel();
 
   // Flush pending changes before the window closes, then really close it.
   const appWindow = getCurrentWindow();

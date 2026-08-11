@@ -1,17 +1,44 @@
 use std::{fs, path::PathBuf};
 
+use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 const FILE_NAME: &str = "data.md";
+const SETTINGS_FILE_NAME: &str = "settings.json";
+const DEFAULT_FONT_SIZE: u32 = 16;
+const MIN_FONT_SIZE: u32 = 10;
+const MAX_FONT_SIZE: u32 = 32;
 
-/// data.md lives next to the executable: the app folder is the whole data folder.
-fn data_path() -> Result<PathBuf, String> {
+/// Resolve the directory next to the executable: the app folder is the whole
+/// data folder.
+fn exe_dir() -> Result<PathBuf, String> {
     let exe = std::env::current_exe()
         .map_err(|e| format!("cannot resolve executable path: {e}"))?;
-    let dir = exe
-        .parent()
-        .ok_or_else(|| "cannot resolve executable directory".to_string())?;
-    Ok(dir.join(FILE_NAME))
+    exe.parent()
+        .map(PathBuf::from)
+        .ok_or_else(|| "cannot resolve executable directory".to_string())
+}
+
+fn data_path() -> Result<PathBuf, String> {
+    Ok(exe_dir()?.join(FILE_NAME))
+}
+
+fn settings_path() -> Result<PathBuf, String> {
+    Ok(exe_dir()?.join(SETTINGS_FILE_NAME))
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    pub font_size: u32,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            font_size: DEFAULT_FONT_SIZE,
+        }
+    }
 }
 
 #[tauri::command]
@@ -42,6 +69,30 @@ fn save_file(content: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn load_settings() -> Result<Settings, String> {
+    let path = settings_path()?;
+    if !path.exists() {
+        return Ok(Settings::default());
+    }
+    let text = fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    // Tolerate malformed files (e.g. hand-edited): fall back to defaults.
+    Ok(serde_json::from_str(&text).unwrap_or_default())
+}
+
+#[tauri::command]
+fn save_settings(settings: Settings) -> Result<(), String> {
+    let clamped = Settings {
+        font_size: settings.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE),
+    };
+    let text = serde_json::to_string_pretty(&clamped).map_err(|e| e.to_string())?;
+    let path = settings_path()?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, text).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    fs::rename(&tmp, &path).map_err(|e| format!("cannot save {}: {e}", path.display()))?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -52,7 +103,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .invoke_handler(tauri::generate_handler![load_file, save_file])
+        .invoke_handler(tauri::generate_handler![load_file, save_file, load_settings, save_settings])
         .run(tauri::generate_context!())
         .expect("error while running daytasks");
 }

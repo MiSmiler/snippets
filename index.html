@@ -8,6 +8,15 @@
   </head>
   <body>
     <div id="editor"></div>
+    <div id="settings" hidden>
+      <div class="settings-title">Font size</div>
+      <div class="settings-row">
+        <button id="font-minus" title="Decrease (Ctrl+-)">−</button>
+        <span id="font-size-value">16</span>
+        <button id="font-plus" title="Increase (Ctrl+=)">+</button>
+        <button id="font-reset" title="Reset to 16 (Ctrl+0)">Reset</button>
+      </div>
+    </div>
     <div id="toast" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
