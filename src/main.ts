@@ -13,6 +13,7 @@ import { Compartment, EditorState, Prec } from "@codemirror/state";
 import {
   defaultKeymap,
   history,
+  historyKeymap,
   indentWithTab,
   moveLineDown,
   moveLineUp,
@@ -26,6 +27,7 @@ import {
 import { insertNewlineContinueMarkup, markdown } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { joinToEvent } from "./undo-history";
 import { wordNavCommands } from "./word-nav";
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -163,7 +165,7 @@ async function main(): Promise<void> {
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
-        history(),
+        history({ joinToEvent }),
         drawSelection(),
         dropCursor(),
         indentOnInput(),
@@ -230,6 +232,15 @@ async function main(): Promise<void> {
           ]),
         ),
         keymap.of(defaultKeymap),
+        // defaultKeymap does not include undo bindings, so without this
+        // Mod-z falls through to the WebView's native undo (a beforeinput
+        // "historyUndo" event that the history extension intercepts). That
+        // path silently fails right after a deletion -- Chromium swallows
+        // the event, Ctrl+Z becomes a no-op, and the deleted character is
+        // only restorable after some typing re-arms the native path.
+        // Registering historyKeymap handles undo/redo directly in the
+        // CodeMirror keymap, which works reliably in every state.
+        keymap.of(historyKeymap),
         darkTheme.of(effectiveTheme() === "dark" ? oneDark : []),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) scheduleSave();
