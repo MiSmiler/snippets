@@ -24,12 +24,13 @@ import {
   indentUnit,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { deleteMarkupBackward, markdown } from "@codemirror/lang-markdown";
+import { markdown } from "@codemirror/lang-markdown";
 import { insertNewlineContinueMarkupCommand } from "./markdown-enter";
 import { GFM } from "@lezer/markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { joinToEvent } from "./undo-history";
 import { wordNavCommands } from "./word-nav";
+import { taskCheckboxExtension } from "./task-checkbox";
 
 const SAVE_DEBOUNCE_MS = 500;
 const DEFAULT_FONT_SIZE = 16;
@@ -175,26 +176,28 @@ async function main(): Promise<void> {
         // Prec.high keymap (Enter -> unconfigured insertNewlineContinueMarkup,
         // Backspace -> deleteMarkupBackward) before the keymap below. At
         // equal precedence the earlier registration wins, which would shadow
-        // our configured Enter binding entirely. Take over both bindings
-        // explicitly instead.
+        // our configured Enter binding entirely. Take over the Enter binding
+        // explicitly instead; Backspace is left to deleteCharBackward so it
+        // deletes one character at a time.
         markdown({ extensions: [GFM], addKeymap: false }),
         indentUnit.of("  "),
         EditorView.lineWrapping,
+        taskCheckboxExtension(),
         // High-precedence keymap: Tab indents the whole line (no tab character
         // inserted), Alt+arrows move lines, and the Enter binding falls back to
         // defaultKeymap's insertNewline when not inside a list/quote.
         // Enter uses the vendored command in ./markdown-enter, which (unlike
         // upstream) always inserts the new item on the next line without a
         // blank line for loose lists, and always exits the list on Enter in an
-        // empty item. Backspace keeps markdown()'s deleteMarkupBackward (see
-        // addKeymap: false above).
+        // empty item. Backspace is not bound here: it falls through to
+        // defaultKeymap's deleteCharBackward, deleting one character at a time
+        // (no whole-marker deletion).
         Prec.high(
           keymap.of([
             indentWithTab,
             { key: "Alt-ArrowUp", run: moveLineUp },
             { key: "Alt-ArrowDown", run: moveLineDown },
             { key: "Enter", run: insertNewlineContinueMarkupCommand() },
-            { key: "Backspace", run: deleteMarkupBackward },
             {
               key: "Mod-ArrowLeft",
               run: wordNav.cursorLeft,

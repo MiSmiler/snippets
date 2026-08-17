@@ -9,7 +9,6 @@ import { keymap } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
 import { ensureSyntaxTree } from "@codemirror/language";
 import {
-  deleteMarkupBackward,
   insertNewlineContinueMarkup,
   markdown,
 } from "@codemirror/lang-markdown";
@@ -58,12 +57,7 @@ test("our configured Enter binding wins over markdown()'s built-in keymap", () =
     doc: "- test1\n- test2\n- test3",
     extensions: [
       markdown({ extensions: [GFM], addKeymap: false }),
-      Prec.high(
-        keymap.of([
-          { key: "Enter", run: enter },
-          { key: "Backspace", run: deleteMarkupBackward },
-        ]),
-      ),
+      Prec.high(keymap.of([{ key: "Enter", run: enter }])),
       keymap.of(defaultKeymap),
     ],
   });
