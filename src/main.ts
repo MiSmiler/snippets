@@ -307,10 +307,15 @@ async function main(): Promise<void> {
         keymap.of(historyKeymap),
         darkTheme.of(effectiveTheme() === "dark" ? oneDark : []),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            const tab = tabs[activeIndex];
-            if (tab) scheduleSave(tab);
-          }
+          const tab = tabs[activeIndex];
+          if (!tab) return;
+          // Keep the per-tab state pointer live: every edit produces a new
+          // EditorState in the view, and tab.state must follow it (doc,
+          // selection, undo history) or switching tabs would restore a stale
+          // snapshot -- wiping unsaved content. Transactions that touch a
+          // dormant state (theme/font reconfigure) don't pass through here.
+          if (tab.state !== update.state) tab.state = update.state;
+          if (update.docChanged) scheduleSave(tab);
         }),
         EditorView.theme({
           "&": { height: "100%" },
