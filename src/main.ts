@@ -846,6 +846,160 @@ async function main(): Promise<void> {
     });
   }
 
+  // ---- Tab context menu & rename (right-click a tab) -------------------
+
+  const tabbarEl = document.getElementById("tabbar")!;
+  const tabMenuEl = document.getElementById("tabmenu")!;
+  const tabMenuRename = document.getElementById("tabmenu-rename") as HTMLButtonElement;
+  const renameEl = document.getElementById("rename")!;
+  const renameInput = document.getElementById("rename-input") as HTMLInputElement;
+  const renameError = document.getElementById("rename-error")!;
+
+  let tabMenuOpen = false;
+  let tabMenuTarget: Tab | null = null;
+  let renameOpen = false;
+  let renameTarget: Tab | null = null;
+
+  function closeTabMenu(): void {
+    if (!tabMenuOpen) return;
+    tabMenuOpen = false;
+    tabMenuEl.hidden = true;
+    // Return focus to the editor, unless a rename dialog is about to take it.
+    requestAnimationFrame(() => {
+      if (!renameOpen && tabs.length > 0) view.focus();
+    });
+  }
+
+  function openTabMenu(tab: Tab, x: number, y: number): void {
+    tabMenuTarget = tab;
+    tabMenuRename.disabled = tab.missing;
+    tabMenuRename.title = tab.missing
+      ? "File was deleted on disk"
+      : `Rename "${tab.label}"`;
+    tabMenuEl.hidden = false;
+    tabMenuOpen = true;
+    const rect = tabMenuEl.getBoundingClientRect();
+    tabMenuEl.style.left = `${Math.max(0, Math.min(x, window.innerWidth - rect.width - 4))}px`;
+    tabMenuEl.style.top = `${Math.max(0, Math.min(y, window.innerHeight - rect.height - 4))}px`;
+    tabMenuRename.focus();
+  }
+
+  function openRenameDialog(tab: Tab): void {
+    closeTabMenu();
+    renameTarget = tab;
+    renameInput.value = tab.label;
+    renameError.hidden = true;
+    renameError.textContent = "";
+    renameEl.hidden = false;
+    renameOpen = true;
+    renameInput.focus();
+    renameInput.select();
+  }
+
+  function closeRenameDialog(): void {
+    if (!renameOpen) return;
+    renameOpen = false;
+    renameEl.hidden = true;
+    renameTarget = null;
+    if (tabs.length > 0) requestAnimationFrame(() => view.focus());
+  }
+
+  function renameStemError(stem: string): string | null {
+    if (!stem) return "Name can't be empty";
+    if (/[\\/:*?"<>|]/.test(stem)) return `Name can't contain \\ / : * ? " < > |`;
+    if (stem.startsWith(".") || stem.endsWith(".") || stem.endsWith(" ")) {
+      return "Name is not allowed";
+    }
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)) return "Name is reserved on Windows";
+    return null;
+  }
+
+  async function submitRename(): Promise<void> {
+    const tab = renameTarget;
+    if (!tab) return;
+    const stem = renameInput.value.trim();
+    const problem = renameStemError(stem);
+    if (problem) {
+      renameError.textContent = problem;
+      renameError.hidden = false;
+      return;
+    }
+    const newName = `${stem}.md`;
+    if (newName.toLowerCase() === tab.name.toLowerCase()) {
+      closeRenameDialog();
+      return;
+    }
+    if (tabs.some((t) => t !== tab && t.name.toLowerCase() === newName.toLowerCase())) {
+      renameError.textContent = `A note named "${stem}" is already open`;
+      renameError.hidden = false;
+      return;
+    }
+    const disk = await listFiles();
+    if (disk.some((n) => n.toLowerCase() === newName.toLowerCase())) {
+      renameError.textContent = `"${stem}.md" already exists on disk`;
+      renameError.hidden = false;
+      return;
+    }
+
+    // Persist anything typed first, so an on-disk rename moves the newest content.
+    await flushTab(tab);
+    if (!tab.onDisk) {
+      // Never written to disk yet: just adopt the new reserved name.
+      renameTab(tab, newName);
+      updateWindowTitle();
+      closeRenameDialog();
+      return;
+    }
+    try {
+      const exists = await invoke<boolean>("file_exists", { name: tab.name });
+      if (!exists) {
+        markMissing(tab);
+        renameError.textContent = `"${tab.label}" was deleted on disk`;
+        renameError.hidden = false;
+        return;
+      }
+    } catch {
+      // Fall through: the rename call will surface real errors.
+    }
+    try {
+      await invoke("rename_file", { payload: { old_name: tab.name, new_name: newName } });
+    } catch (error) {
+      renameError.textContent = errMessage(error);
+      renameError.hidden = false;
+      return;
+    }
+    renameTab(tab, newName);
+    updateWindowTitle();
+    closeRenameDialog();
+  }
+
+  tabbarEl.addEventListener("contextmenu", (event) => {
+    const el = (event.target as Element).closest(".tab");
+    if (!el) return;
+    event.preventDefault();
+    const name = (el as HTMLElement).dataset.name;
+    const tab = name ? tabs.find((t) => t.name === name) : undefined;
+    if (tab) openTabMenu(tab, event.clientX, event.clientY);
+  });
+
+  tabMenuRename.addEventListener("click", () => {
+    const target = tabMenuTarget;
+    closeTabMenu();
+    if (target) openRenameDialog(target);
+  });
+
+  renameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void submitRename();
+    }
+  });
+  document.getElementById("rename-ok")!.addEventListener("click", () => void submitRename());
+  document.getElementById("rename-cancel")!.addEventListener("click", closeRenameDialog);
+  renameEl.addEventListener("click", (event) => {
+    if (event.target === renameEl) closeRenameDialog();
+  });
+
   // ---- Global keyboard shortcuts ---------------------------------------
 
   document.addEventListener("keydown", (event) => {
@@ -859,12 +1013,18 @@ async function main(): Promise<void> {
       } else if (paletteOpen) {
         event.preventDefault();
         closePalette();
+      } else if (renameOpen) {
+        event.preventDefault();
+        closeRenameDialog();
+      } else if (tabMenuOpen) {
+        event.preventDefault();
+        closeTabMenu();
       } else if (!settingsEl.hidden) {
         closeSettings();
       }
       return;
     }
-    if (confirmResolve || paletteOpen) return; // dialogs own their keys
+    if (confirmResolve || paletteOpen || renameOpen || tabMenuOpen) return; // dialogs own their keys
     if (!mod) return;
     const key = event.key.toLowerCase();
     // Ctrl+, is bound inside the editor keymap when the editor is focused;
@@ -979,6 +1139,7 @@ async function main(): Promise<void> {
   document.addEventListener("pointerdown", (event) => {
     if (!settingsEl.hidden && !settingsEl.contains(event.target as Node)) closeSettings();
     if (paletteOpen && !paletteEl.contains(event.target as Node)) closePalette();
+    if (tabMenuOpen && !tabMenuEl.contains(event.target as Node)) closeTabMenu();
   });
 
   // React to system theme changes, but only when the user hasn't overridden it.

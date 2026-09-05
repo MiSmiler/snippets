@@ -44,7 +44,27 @@
       <div id="confirm" hidden>
         <div class="confirm-card">
           <div id="confirm-message"></div>
-          <div id="confirm-actions"></div>
+          <div id="confirm-actions" class="dialog-actions"></div>
+        </div>
+      </div>
+      <div id="tabmenu" hidden>
+        <button id="tabmenu-rename">Rename…</button>
+      </div>
+      <div id="rename" hidden>
+        <div class="confirm-card">
+          <div class="dialog-title">Rename note</div>
+          <input
+            id="rename-input"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="note name"
+          />
+          <div id="rename-error" class="rename-error" hidden></div>
+          <div class="dialog-actions">
+            <button id="rename-ok">Rename</button>
+            <button id="rename-cancel">Cancel</button>
+          </div>
         </div>
       </div>
       <div id="toast" hidden></div>

@@ -175,6 +175,48 @@ fn save_file(payload: SaveFileArgs) -> Result<SaveStatus, String> {
     }
 }
 
+#[derive(Deserialize)]
+pub struct RenameFileArgs {
+    pub old_name: String,
+    pub new_name: String,
+}
+
+/// Rename a note file on disk. Refuses to overwrite an existing file
+/// (checked case-insensitively, matching the Windows filesystem). A pure
+/// case-only change is treated as a no-op.
+#[tauri::command]
+fn rename_file(payload: RenameFileArgs) -> Result<(), String> {
+    if payload.old_name.eq_ignore_ascii_case(&payload.new_name) {
+        return Ok(());
+    }
+    let old = note_path(&payload.old_name)?;
+    if !old.is_file() {
+        return Err(format!("{} does not exist", payload.old_name));
+    }
+    let new = note_path(&payload.new_name)?;
+
+    let dir = exe_dir()?;
+    let entries = fs::read_dir(&dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
+    for entry in entries {
+        let Ok(entry) = entry else { continue };
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        // The source file itself (any casing of `old_name`) is allowed;
+        // anything else already using the target name blocks the rename.
+        if name != payload.old_name && name.eq_ignore_ascii_case(&payload.new_name) {
+            return Err(format!("{} already exists", payload.new_name));
+        }
+    }
+
+    fs::rename(&old, &new).map_err(|e| format!("cannot rename {}: {e}", payload.old_name))?;
+    Ok(())
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -283,6 +325,7 @@ pub fn run() {
             file_exists,
             load_file,
             save_file,
+            rename_file,
             load_settings,
             save_settings
         ])

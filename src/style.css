@@ -389,13 +389,13 @@ body {
   user-select: none;
 }
 
-#confirm-actions {
+.dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
-#confirm-actions button {
+.dialog-actions button {
   padding: 6px 14px;
   border: 1px solid var(--card-border);
   border-radius: 5px;
@@ -405,14 +405,107 @@ body {
   cursor: pointer;
 }
 
-#confirm-actions button:hover {
+.dialog-actions button:hover {
   background: var(--btn-hover);
 }
 
-#confirm-actions button.danger {
+.dialog-actions button.danger {
   background: var(--danger);
   border-color: transparent;
   color: #ffffff;
+}
+
+/* ---- Tab context menu (right-click a tab) ---- */
+
+#tabmenu {
+  position: fixed;
+  min-width: 150px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  padding: 4px;
+  z-index: 65;
+  user-select: none;
+}
+
+#tabmenu[hidden] {
+  display: none;
+}
+
+#tabmenu button {
+  display: block;
+  width: 100%;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  font: 13px/1.4 system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+#tabmenu button:hover:enabled {
+  background: var(--btn-hover);
+}
+
+#tabmenu button:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+/* ---- Rename dialog ---- */
+
+#rename {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 70;
+}
+
+#rename[hidden] {
+  display: none;
+}
+
+.dialog-title {
+  color: var(--fg);
+  font: 600 13px/1.5 system-ui, sans-serif;
+  margin-bottom: 10px;
+  user-select: none;
+}
+
+#rename-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--card-border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.4 Consolas, 'Microsoft YaHei', monospace;
+  outline: none;
+}
+
+#rename-input:focus {
+  border-color: var(--dim);
+}
+
+.rename-error {
+  margin-top: 8px;
+  color: var(--danger);
+  font: 12px/1.4 system-ui, sans-serif;
+  user-select: none;
+}
+
+#rename-error[hidden] {
+  display: none;
+}
+
+#rename-actions {
+  margin-top: 14px;
 }
 
 /* Interactive task-list checkboxes (see src/task-checkbox.ts). */
