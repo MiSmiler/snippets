@@ -10,6 +10,8 @@
   --btn-hover: #e5e7eb;
   --danger: #b91c1c;
   --dim: #6b7280;
+  --inline-code-bg: rgb(175 184 193 / 0.3);
+  --inline-code-border: rgb(175 184 193 / 0.55);
 }
 
 :root[data-theme="dark"] {
@@ -24,6 +26,8 @@
   --btn-hover: #464c55;
   --danger: #f47067;
   --dim: #8b93a1;
+  --inline-code-bg: rgb(110 118 129 / 0.35);
+  --inline-code-border: rgb(110 118 129 / 0.55);
 }
 
 /* ---- Editor fonts ----
@@ -220,10 +224,25 @@ body {
   font-family: var(--font-code);
 }
 
-/* Markdown code regions (.cm-code from src/code-font.ts) render in the code
-   font; everything else on those lines keeps inheriting the prose font. */
-.cm-content .cm-code {
+/* Markdown code regions (.cm-code from src/code-font.ts):
+   - block code lines (line decoration) get the code font only;
+   - inline code (span decoration) gets the code font plus a GitHub-style
+     translucent pill (soft background + hairline border + rounding).
+     Translucent so a text selection inside the pill stays readable.
+     Horizontal padding is small; box-decoration-break: clone keeps a
+     soft-wrapped pill whole on each wrapped line fragment. */
+.cm-line.cm-code {
   font-family: var(--font-code);
+}
+
+.cm-line span.cm-code {
+  font-family: var(--font-code);
+  background: var(--inline-code-bg);
+  border: 1px solid var(--inline-code-border);
+  border-radius: 4px;
+  padding: 0 0.15em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .cm-activeLineGutter {
