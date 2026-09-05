@@ -7,26 +7,48 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="editor"></div>
-    <div id="settings" hidden>
-      <div class="settings-title">Settings</div>
-      <div class="settings-row">
-        <span class="settings-label">Font size</span>
-        <button id="font-minus" title="Decrease (Ctrl+-)">−</button>
-        <span id="font-size-value">16</span>
-        <button id="font-plus" title="Increase (Ctrl+=)">+</button>
-        <button id="font-reset" title="Reset to 16 (Ctrl+0)">Reset</button>
+    <div id="app">
+      <div id="tabbar" hidden></div>
+      <div id="main">
+        <div id="editor"></div>
+        <div id="empty" hidden></div>
       </div>
-      <div class="settings-row">
-        <span class="settings-label">Theme</span>
-        <select id="theme-select">
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-          <option value="system">System</option>
-        </select>
+      <div id="settings" hidden>
+        <div class="settings-title">Settings</div>
+        <div class="settings-row">
+          <span class="settings-label">Font size</span>
+          <button id="font-minus" title="Decrease (Ctrl+-)">−</button>
+          <span id="font-size-value">16</span>
+          <button id="font-plus" title="Increase (Ctrl+=)">+</button>
+          <button id="font-reset" title="Reset to 16 (Ctrl+0)">Reset</button>
+        </div>
+        <div class="settings-row">
+          <span class="settings-label">Theme</span>
+          <select id="theme-select">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="system">System</option>
+          </select>
+        </div>
       </div>
+      <div id="palette" hidden>
+        <input
+          id="palette-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Open a note..."
+        />
+        <div id="palette-list"></div>
+      </div>
+      <div id="confirm" hidden>
+        <div class="confirm-card">
+          <div id="confirm-message"></div>
+          <div id="confirm-actions"></div>
+        </div>
+      </div>
+      <div id="toast" hidden></div>
     </div>
-    <div id="toast" hidden></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
