@@ -39,6 +39,7 @@ import {
   stripMarkdownExt,
   type StartupPlan,
 } from "./note-utils";
+import { dropSlot, dropSlotIsNoOp, moveItem, type TabBounds } from "./tab-order";
 
 const SAVE_DEBOUNCE_MS = 500;
 const SESSION_DEBOUNCE_MS = 300;
@@ -1098,8 +1099,14 @@ async function main(): Promise<void> {
     // Escape is handled by the global keydown listener.
   });
 
-  // Tab bar: click to switch, × to close.
+  // Tab bar: click to switch, × to close. A click right after a real drag is
+  // suppressed below, so a drop never also switches tabs.
+  let suppressNextClick = false;
   document.getElementById("tabbar")!.addEventListener("click", (event) => {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
     const el = (event.target as Element).closest(".tab");
     if (!el) return;
     const name = (el as HTMLElement).dataset.name;
@@ -1110,6 +1117,182 @@ async function main(): Promise<void> {
     } else {
       switchTo(tab);
     }
+  });
+
+  // ---- Drag to reorder tabs (pointer events, ghost + slot caret) --------
+  //
+  // A press on a tab starts a drag once the pointer moves past a threshold;
+  // below it the release is an ordinary click (handled above). While dragging,
+  // the source tab stays in place (dimmed), a cloned ghost follows the cursor,
+  // and a caret marks the target slot between tabs. Only a release inside the
+  // bar commits; anything else (outside the bar, pointercancel) leaves the
+  // order untouched. The active tab never changes during or after a drag.
+
+  const DRAG_THRESHOLD_PX = 4;
+  let dragPointerId: number | null = null;
+  let dragSourceEl: HTMLElement | null = null;
+  let dragIndex = -1;
+  let dragDownX = 0;
+  let dragDownY = 0;
+  let dragActive = false;
+  let dragGhost: HTMLElement | null = null;
+
+  const caretEl = document.createElement("div");
+  caretEl.className = "tab-caret";
+  caretEl.hidden = true;
+
+  /** Current tab geometry in viewport coordinates, in display order. */
+  function tabBounds(): TabBounds[] {
+    const bounds: TabBounds[] = [];
+    for (const el of tabbarEl.querySelectorAll<HTMLElement>(".tab")) {
+      const rect = el.getBoundingClientRect();
+      bounds.push({ left: rect.left, right: rect.right });
+    }
+    return bounds;
+  }
+
+  function showDragVisuals(el: HTMLElement, x: number, y: number): void {
+    dragActive = true;
+    tabbarEl.classList.add("dragging");
+    el.classList.add("dragging");
+    const rect = el.getBoundingClientRect();
+    const ghost = el.cloneNode(true) as HTMLElement;
+    ghost.classList.remove("dragging");
+    ghost.classList.add("tab-ghost");
+    ghost.style.width = `${rect.width}px`;
+    ghost.style.height = `${rect.height}px`;
+    ghost.style.left = `${rect.left}px`;
+    ghost.style.top = `${rect.top}px`;
+    // Keep the cursor at the same spot inside the ghost as it was on the tab.
+    ghost.dataset.ox = String(x - rect.left);
+    ghost.dataset.oy = String(y - rect.top);
+    document.body.append(ghost);
+    dragGhost = ghost;
+    tabbarEl.append(caretEl);
+    caretEl.hidden = false;
+    moveDragGhost(x, y);
+  }
+
+  function moveDragGhost(x: number, y: number): void {
+    const ghost = dragGhost;
+    if (!ghost) return;
+    const ox = Number(ghost.dataset.ox ?? 0);
+    const oy = Number(ghost.dataset.oy ?? 0);
+    const baseX = parseFloat(ghost.style.left);
+    const baseY = parseFloat(ghost.style.top);
+    ghost.style.transform = `translate(${x - ox - baseX}px, ${y - oy - baseY}px)`;
+
+    const bounds = tabBounds();
+    const slot = dropSlot(bounds, x);
+    const barRect = tabbarEl.getBoundingClientRect();
+    let caretX: number;
+    if (bounds.length === 0) {
+      caretX = 0;
+    } else if (slot < bounds.length) {
+      caretX = bounds[slot].left - barRect.left;
+    } else {
+      caretX = bounds[bounds.length - 1].right - barRect.left;
+    }
+    caretEl.style.left = `${Math.min(Math.max(caretX, 0), barRect.width)}px`;
+  }
+
+  function clearDragVisuals(): void {
+    if (dragGhost) {
+      dragGhost.remove();
+      dragGhost = null;
+    }
+    caretEl.hidden = true;
+    caretEl.remove();
+    tabbarEl.classList.remove("dragging");
+    for (const el of tabbarEl.querySelectorAll<HTMLElement>(".tab.dragging")) {
+      el.classList.remove("dragging");
+    }
+  }
+
+  /** Commit the drag: reorder tabs so the dragged one lands at `slot`. */
+  function commitDrag(from: number, slot: number): void {
+    const prevActive = activeIndex >= 0 ? tabs[activeIndex] : undefined;
+    tabs = moveItem(tabs, from, slot);
+    activeIndex = prevActive !== undefined ? tabs.indexOf(prevActive) : -1;
+    renderTabBar();
+    persistSoon();
+  }
+
+  tabbarEl.addEventListener("pointerdown", (event) => {
+    suppressNextClick = false; // a stale drag-click may never have fired
+    if (dragPointerId !== null) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    // The × button owns its own gesture (close), never starts a drag.
+    if ((event.target as Element).closest(".tab-close")) return;
+    const el = (event.target as Element).closest<HTMLElement>(".tab");
+    if (!el) return;
+    const name = el.dataset.name;
+    const idx = name ? tabs.findIndex((t) => t.name === name) : -1;
+    if (idx < 0) return;
+    dragPointerId = event.pointerId;
+    dragSourceEl = el;
+    dragIndex = idx;
+    dragDownX = event.clientX;
+    dragDownY = event.clientY;
+    dragActive = false;
+    // Deliberately no pointer capture here: capturing on press would retarget
+    // the eventual click event to #tabbar, breaking click-to-switch. Capture is
+    // taken only once the drag actually starts (see pointermove below).
+  });
+
+  tabbarEl.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== dragPointerId) return;
+    if (!dragActive) {
+      const dx = event.clientX - dragDownX;
+      const dy = event.clientY - dragDownY;
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      const el = dragSourceEl;
+      // A re-render (e.g. autosave renamed a file) may have detached the
+      // pressed tab between down and the threshold: give up this gesture.
+      if (!el || !el.isConnected) {
+        dragPointerId = null;
+        dragSourceEl = null;
+        dragIndex = -1;
+        dragActive = false;
+        return;
+      }
+      // From here on the pointer may leave the bar, so keep receiving moves
+      // and the release with capture.
+      tabbarEl.setPointerCapture(event.pointerId);
+      showDragVisuals(el, dragDownX, dragDownY);
+    }
+    moveDragGhost(event.clientX, event.clientY);
+  });
+
+  tabbarEl.addEventListener("pointerup", (event) => {
+    if (event.pointerId !== dragPointerId) return;
+    const wasActive = dragActive;
+    const x = event.clientX;
+    const from = dragIndex;
+    dragPointerId = null;
+    dragSourceEl = null;
+    dragIndex = -1;
+    dragActive = false;
+    if (!wasActive) return; // plain press-release: the click listener handles it
+    suppressNextClick = true; // a drop must not also switch tabs
+    clearDragVisuals();
+    const barRect = tabbarEl.getBoundingClientRect();
+    const insideBar = x >= barRect.left && x <= barRect.right;
+    if (insideBar && from >= 0) {
+      const slot = dropSlot(tabBounds(), x);
+      if (!dropSlotIsNoOp(from, slot)) commitDrag(from, slot);
+    }
+    if (tabs.length > 0) requestAnimationFrame(() => view.focus());
+  });
+
+  tabbarEl.addEventListener("pointercancel", (event) => {
+    if (event.pointerId !== dragPointerId) return;
+    dragPointerId = null;
+    dragSourceEl = null;
+    dragIndex = -1;
+    dragActive = false;
+    clearDragVisuals();
+    if (tabs.length > 0) requestAnimationFrame(() => view.focus());
   });
 
   confirmEl.addEventListener("click", (event) => {

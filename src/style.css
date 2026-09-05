@@ -52,11 +52,12 @@ body {
   display: flex;
   align-items: stretch;
   height: 32px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   background: var(--gutter-bg);
   border-bottom: 1px solid var(--card-border);
   user-select: none;
+  touch-action: none;
+  position: relative;
 }
 
 #tabbar[hidden] {
@@ -67,7 +68,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 0 0 auto;
+  flex: 0 1 auto; /* many tabs squeeze instead of scrolling off */
   max-width: 180px;
   min-width: 0;
   padding: 0 4px 0 12px;
@@ -121,6 +122,56 @@ body {
 .tab.missing .tab-label {
   color: var(--danger);
   text-decoration: line-through;
+}
+
+/* ---- Drag to reorder tabs ---- */
+
+/* While dragging, freeze hover affordances so tabs under the cursor don't
+   flicker their hover/close states (the caret is the only signal). */
+#tabbar.dragging .tab {
+  cursor: default;
+}
+
+#tabbar.dragging .tab:hover {
+  background: transparent;
+}
+
+#tabbar.dragging .tab:not(.active):hover {
+  color: var(--dim);
+}
+
+#tabbar.dragging .tab:hover .tab-close {
+  opacity: 0;
+}
+
+/* The source tab stays in place, dimmed, while its ghost follows the cursor. */
+.tab.dragging {
+  opacity: 0.35;
+}
+
+/* Drop target: a 2px caret at the slot boundary between tabs. */
+.tab-caret {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fg);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* Floating copy of the dragged tab, kept aligned with the cursor. */
+.tab-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+  opacity: 0.95;
+  will-change: transform;
 }
 
 /* ---- Main editor / empty page ---- */
