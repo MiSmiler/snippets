@@ -214,8 +214,11 @@ async function main(): Promise<void> {
     setFontSize(DEFAULT_FONT_SIZE);
   }
 
-  // Ctrl+ArrowLeft/Right (+Shift selection, +Backspace/Delete deletion) jump
-  // between Chinese words instead of skipping a whole CJK run.
+  // Word navigation (Ctrl+Arrow on Windows/Linux, Option+Arrow on macOS, +Shift
+  // selection, +Backspace/Delete deletion) jumps between Chinese words instead
+  // of skipping a whole CJK run. `mac:` swaps the modifier like CodeMirror's
+  // own group-movement bindings, so macOS keeps its native Option+Arrow combo
+  // and Cmd+Arrow stays line-boundary movement (defaultKeymap).
   const wordNav = wordNavCommands();
 
   function makeState(doc: string): EditorState {
@@ -253,16 +256,18 @@ async function main(): Promise<void> {
             { key: "Enter", run: insertNewlineContinueMarkupCommand() },
             {
               key: "Mod-ArrowLeft",
+              mac: "Alt-ArrowLeft",
               run: wordNav.cursorLeft,
               shift: wordNav.selectLeft,
             },
             {
               key: "Mod-ArrowRight",
+              mac: "Alt-ArrowRight",
               run: wordNav.cursorRight,
               shift: wordNav.selectRight,
             },
-            { key: "Mod-Backspace", run: wordNav.deleteBackward },
-            { key: "Mod-Delete", run: wordNav.deleteForward },
+            { key: "Mod-Backspace", mac: "Alt-Backspace", run: wordNav.deleteBackward },
+            { key: "Mod-Delete", mac: "Alt-Delete", run: wordNav.deleteForward },
             {
               key: "Mod-,",
               run: () => {

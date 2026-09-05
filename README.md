@@ -47,9 +47,9 @@ npm run icon         # 重新生成应用图标（light + dark 两套）
 | `Ctrl+1`…`Ctrl+8` | 跳到第 1…8 个标签页；`Ctrl+9` 跳到最后一个 |
 | `Tab` / `Shift+Tab` | 整行缩进 / 取消缩进（不插入 Tab 字符） |
 | `Alt+↑` / `Alt+↓` | 上移 / 下移当前行（有选区则移动整个选区） |
-| `Ctrl+←` / `Ctrl+→` | 光标按词移动（中文按词分词） |
-| `Ctrl+Shift+←` / `Ctrl+Shift+→` | 按词扩展选区（中文按词分词） |
-| `Ctrl+Backspace` / `Ctrl+Delete` | 按词删除（中文按词分词） |
+| `Ctrl+←` / `Ctrl+→` | 光标按词移动（中文按词分词；macOS 上用 `Option+←/→`） |
+| `Ctrl+Shift+←` / `Ctrl+Shift+→` | 按词扩展选区（中文按词分词；macOS 上用 `Option+Shift+←/→`） |
+| `Ctrl+Backspace` / `Ctrl+Delete` | 按词删除（中文按词分词；macOS 上用 `Option+Backspace/Delete`） |
 | `Ctrl+Z` / `Ctrl+Y` | 撤销 / 重做 |
 | `Ctrl+A` | 全选 |
 | `Enter` | 列表行内回车自动延续 `- ` 前缀 |
@@ -57,4 +57,4 @@ npm run icon         # 重新生成应用图标（light + dark 两套）
 | `Ctrl+=` / `Ctrl+-` | 放大 / 缩小字号（10–32px） |
 | `Ctrl+0` | 字号重置为 16px |
 
-macOS 上同一组快捷键用 `Cmd` 触发。
+macOS 上同一组快捷键用 `Cmd` 触发；上表中标注的按词移动 / 选区 / 删除除外，macOS 用 `Option` 触发。
