@@ -26,6 +26,22 @@
   --dim: #8b93a1;
 }
 
+/* ---- Editor fonts ----
+
+   Three roles, one CSS font stack each (glyphs route per character: the
+   first font in the stack that has the glyph wins).
+
+   --font-prose  whole note text: English/numerals in the platform UI sans
+                 (macOS SF Pro, Windows Segoe UI), CJK falls through to the
+                 platform 黑体 (苹方 on macOS, 微软雅黑 on Windows).
+   --font-code   markdown code only (inline `code`, fenced/indented blocks):
+                 English in the platform monospace (Consolas / Menlo); CJK
+                 inside code falls back to the same 黑体 as prose. */
+:root {
+  --font-prose: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-code: Consolas, Menlo, 'PingFang SC', 'Microsoft YaHei', monospace;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -200,6 +216,14 @@ body {
   background: var(--gutter-bg);
   color: var(--gutter-fg);
   border-right: none;
+  /* Line numbers stay in the code font even though prose is proportional. */
+  font-family: var(--font-code);
+}
+
+/* Markdown code regions (.cm-code from src/code-font.ts) render in the code
+   font; everything else on those lines keeps inheriting the prose font. */
+.cm-content .cm-code {
+  font-family: var(--font-code);
 }
 
 .cm-activeLineGutter {
@@ -237,7 +261,7 @@ body {
   border-bottom-width: 2px;
   border-radius: 5px;
   background: var(--card-bg);
-  font: 12px/1.6 Consolas, 'Microsoft YaHei', monospace;
+  font: 12px/1.6 system-ui, sans-serif;
   color: var(--fg);
 }
 
@@ -291,7 +315,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  font: 14px/1 Consolas, 'Microsoft YaHei', monospace;
+  font: 14px/1 system-ui, sans-serif;
   color: var(--fg);
 }
 
@@ -536,7 +560,7 @@ body {
   border-radius: 5px;
   background: var(--bg);
   color: var(--fg);
-  font: 14px/1.4 Consolas, 'Microsoft YaHei', monospace;
+  font: 14px/1.4 system-ui, sans-serif;
   outline: none;
 }
 

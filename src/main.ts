@@ -31,6 +31,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import { joinToEvent } from "./undo-history";
 import { wordNavCommands } from "./word-nav";
 import { taskCheckboxExtension } from "./task-checkbox";
+import { codeFontExtension } from "./code-font";
 import {
   DATA_MD,
   freeUntitledName,
@@ -245,6 +246,7 @@ async function main(): Promise<void> {
         indentUnit.of("  "),
         EditorView.lineWrapping,
         taskCheckboxExtension(),
+        codeFontExtension(),
         // High-precedence keymap: Tab indents the whole line (no tab
         // character inserted), Alt+arrows move lines, and the Enter binding
         // falls back to defaultKeymap's insertNewline when not inside a
@@ -325,11 +327,10 @@ async function main(): Promise<void> {
         }),
         EditorView.theme({
           "&": { height: "100%" },
-          ".cm-scroller": {
-            fontFamily: "'Consolas', 'Microsoft YaHei', monospace",
-            lineHeight: "1.65",
-          },
-          ".cm-content": { padding: "14px 0" },
+          ".cm-scroller": { lineHeight: "1.65" },
+          // Prose (Chinese + English) renders in the proportional font stack;
+          // markdown code regions are switched to --font-code by code-font.ts.
+          ".cm-content": { fontFamily: "var(--font-prose)", padding: "14px 0" },
           "&.cm-focused": { outline: "none" },
         }),
         fontTheme.of(EditorView.theme({ "&": { fontSize: `${fontSize}px` } })),
