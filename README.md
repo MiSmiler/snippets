@@ -56,6 +56,8 @@ npm run icon         # 重新生成应用图标（light + dark 两套）
 | `Ctrl+Z` / `Ctrl+Y` | 撤销 / 重做 |
 | `Ctrl+A` | 全选 |
 | `Enter` | 列表行内回车自动延续 `- ` 前缀 |
+| `Ctrl+Enter` | 在下方插入空行，光标移入新行（不拆分原行） |
+| `Ctrl+Shift+Enter` | 在上方插入空行，光标移入新行（不拆分原行） |
 | `Ctrl+,` | 打开字号 / 主题设置 |
 | `Ctrl+=` / `Ctrl+-` | 放大 / 缩小字号（10–32px） |
 | `Ctrl+0` | 字号重置为 16px |

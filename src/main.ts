@@ -26,6 +26,7 @@ import {
 } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { insertNewlineContinueMarkupCommand } from "./markdown-enter";
+import { insertLineAboveCommand } from "./insert-line";
 import { GFM } from "@lezer/markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { joinToEvent } from "./undo-history";
@@ -250,13 +251,19 @@ async function main(): Promise<void> {
         // High-precedence keymap: Tab indents the whole line (no tab
         // character inserted), Alt+arrows move lines, and the Enter binding
         // falls back to defaultKeymap's insertNewline when not inside a
-        // list/quote.
+        // list/quote. Shift+Mod+Enter inserts a blank line above (the "blank
+        // line below" counterpart, Mod+Enter, ships in defaultKeymap as
+        // insertBlankLine).
         Prec.high(
           keymap.of([
             indentWithTab,
             { key: "Alt-ArrowUp", run: moveLineUp },
             { key: "Alt-ArrowDown", run: moveLineDown },
             { key: "Enter", run: insertNewlineContinueMarkupCommand() },
+            {
+              key: "Shift-Mod-Enter",
+              run: insertLineAboveCommand(),
+            },
             {
               key: "Mod-ArrowLeft",
               mac: "Alt-ArrowLeft",
