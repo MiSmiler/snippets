@@ -11,10 +11,13 @@
 // Dividers partition the document into *blocks* (maximal runs of lines that
 // are not divider rows; consecutive dividers merge into one boundary). They
 // exist purely for selection: a divider row belongs to no block. A block's
-// text ends at the last character of its final line -- the line break that
-// would otherwise sit between that line and the divider below is not part of
-// the block, so copying a block never carries a trailing newline (or blank
-// line) along. Ctrl+A is redefined as a stateless two-level selection:
+// text ends at the last character of its final *non-blank* line: blank lines
+// that merely separate the content from the divider below (or from the end
+// of the document) are trailing margins, not block text, and neither they
+// nor the final line's line break are part of the block. Copying a block
+// therefore never carries a trailing blank line or newline along; blank
+// lines sandwiched between content lines stay put. Ctrl+A is redefined as a
+// stateless two-level selection:
 //   - first press selects the block containing the caret;
 //   - a second press (or any state where the current block is already fully
 //     selected) selects the whole document, which stays selected on further
@@ -95,9 +98,11 @@ function isDividerLine(dividers: DividerInfo[], line: number): boolean {
 
 /**
  * The block containing `pos` (as an offset range covering the block's text
- * through the end of its last line), or null when `pos` sits on a divider
- * row and therefore belongs to no block. A document without dividers is one
- * block spanning everything.
+ * through the last character of its last non-blank line), or null when `pos`
+ * sits on a divider row and therefore belongs to no block. Trailing blank
+ * lines of the block (margins in front of a divider or at the document end)
+ * are trimmed away, so the range never ends in blank lines or a stray
+ * newline. A document without dividers is one block spanning everything.
  */
 export function blockAt(state: EditorState, pos: number): BlockSpan | null {
   const doc = state.doc;
@@ -110,11 +115,16 @@ export function blockAt(state: EditorState, pos: number): BlockSpan | null {
   let end = line.number;
   while (end < doc.lines && !isDividerLine(dividers, end + 1)) end += 1;
 
+  // Drop blank lines at the block's tail. A blank line is only meaningful
+  // inside a block when content follows it; at the tail it is a separator
+  // margin that should not end up in a copy (or a retype over the block).
+  while (end > start && doc.line(end).text.trim().length === 0) end -= 1;
+
   const from = doc.line(start).from;
-  // End at the last character of the block's final line. The line break that
-  // would separate that line from the divider below is left out, so copying
-  // a block (or retyping over it) never drags the divider's adjacent newline
-  // along. A block that runs to the document end still reaches doc.length.
+  // End at the last character of the block's final (non-blank) line. The line
+  // break that would otherwise follow it is not part of the block, so copying
+  // never drags a trailing newline along. A block at the document end still
+  // reaches doc.length when its last line runs to the end.
   const to = doc.line(end).to;
   return { from, to, blank: doc.sliceString(from, to).trim().length === 0 };
 }

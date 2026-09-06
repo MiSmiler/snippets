@@ -99,10 +99,11 @@ test("a divider line with trailing whitespace is recognized", () => {
 
 test("one divider: the block above ends at its last character, not the divider", () => {
   // CDOC below: alpha, blank, --- (line 3), beta, gamma. The block above is
-  // "alpha" (line 1): the divider row and the blank line in front of it are
-  // not part of the block text, so no newline is dragged along on copy.
+  // "alpha" (line 1): the blank line in front of the divider and the divider
+  // row itself are trailing margins, not block text -- so a copy is exactly
+  // "alpha", with no blank line and no trailing newline.
   const block = blockAt(makeState("alpha\n\n---\nbeta\ngamma"), 2)!;
-  assert.deepEqual({ from: block.from, to: block.to }, { from: 0, to: 6 });
+  assert.deepEqual({ from: block.from, to: block.to }, { from: 0, to: 5 });
   assert.equal(block.blank, false);
 });
 
@@ -116,12 +117,26 @@ test("a caret on the divider row belongs to no block", () => {
   assert.equal(blockAt(makeState("alpha\n\n---\nbeta\ngamma"), 8), null);
 });
 
-test("two dividers yield three blocks (no trailing newline inside the block text)", () => {
+test("two dividers yield three blocks (margins and trailing newlines trimmed)", () => {
   const doc = "one\n\n---\ntwo\n\n---\nthree";
   const state = makeState(doc);
-  assert.equal(doc.slice(blockAt(state, 1)!.from, blockAt(state, 1)!.to), "one\n");
-  assert.equal(doc.slice(blockAt(state, 10)!.from, blockAt(state, 10)!.to), "two\n");
+  assert.equal(doc.slice(blockAt(state, 1)!.from, blockAt(state, 1)!.to), "one");
+  assert.equal(doc.slice(blockAt(state, 10)!.from, blockAt(state, 10)!.to), "two");
   assert.equal(doc.slice(blockAt(state, 20)!.from, blockAt(state, 20)!.to), "three");
+});
+
+test("several trailing blank lines above a divider are all trimmed", () => {
+  const doc = "one\n\n\n---\ntwo";
+  const block = blockAt(makeState(doc), 2)!;
+  assert.equal(doc.slice(block.from, block.to), "one");
+});
+
+test("blank lines inside a block are kept", () => {
+  // A blank line sandwiched between two content lines is real body text and
+  // survives; only the blank tail above the divider is dropped.
+  const doc = "one\n\n\ntwo\n\n---\nthree";
+  const block = blockAt(makeState(doc), 2)!;
+  assert.equal(doc.slice(block.from, block.to), "one\n\n\ntwo");
 });
 
 test("a document without dividers is a single whole-document block", () => {
@@ -143,18 +158,18 @@ test("a document made only of dividers has no blocks", () => {
 // ---- Ctrl+A state machine ------------------------------------------------
 
 // CDOC = alpha, blank line, --- (divider, line 3), beta, gamma.
-// Block 1 is [0, 6) "alpha\n" (the blank row in front of the divider is not
+// Block 1 is [0, 5) "alpha" (the blank row in front of the divider is not
 // part of the block); block 2 is [11, 21) "beta\ngamma".
 const CDOC = "alpha\n\n---\nbeta\ngamma";
 
-test("first press inside a block selects that block (no trailing newline)", () => {
-  assert.equal(targetText(CDOC, 2), "alpha\n");
+test("first press inside a block selects that block (no trailing newline or blank)", () => {
+  assert.equal(targetText(CDOC, 2), "alpha");
   assert.equal(targetText(CDOC, 13), "beta\ngamma");
 });
 
 test("pressing again after the block is selected expands to the whole document", () => {
   // Block 1 fully selected (head back inside it at position 0).
-  assert.deepEqual(target(CDOC, 6, 0), { from: 0, to: CDOC.length });
+  assert.deepEqual(target(CDOC, 5, 0), { from: 0, to: CDOC.length });
 });
 
 test("a block selected by dragging also expands on the next press", () => {
@@ -182,7 +197,7 @@ test("a selection spanning a divider collapses to the caret's block", () => {
 test("after moving the caret away, the next press selects the block again", () => {
   // Any cursor motion cancels a selection; a fresh Ctrl+A then re-enters
   // block-level selection (stateless: no memory of the previous press).
-  assert.equal(targetText(CDOC, 2), "alpha\n");
+  assert.equal(targetText(CDOC, 2), "alpha");
 });
 
 test("no dividers: Ctrl+A always selects the whole document", () => {
@@ -196,7 +211,7 @@ test("a divider as the first line leaves only the content below selectable", () 
 });
 
 test("a divider as the last line: content above, whole document from the divider", () => {
-  assert.equal(targetText("content\n\n---", 2), "content\n");
+  assert.equal(targetText("content\n\n---", 2), "content");
   assert.deepEqual(target("content\n\n---", 10), { from: 0, to: "content\n\n---".length });
 });
 
