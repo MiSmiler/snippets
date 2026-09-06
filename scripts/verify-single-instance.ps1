@@ -1,6 +1,9 @@
 $ErrorActionPreference = "Continue"
-$debugExe = "D:\02_proj\mismiler\snippets\src-tauri\target\debug\snippets.exe"
-$releaseExe = "D:\02_proj\mismiler\snippets\src-tauri\target\release\snippets.exe"
+# Resolve the debug/release exes relative to this script so the check runs
+# from any checkout location (script lives in <repo>/scripts/).
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$debugExe = Join-Path $repoRoot "src-tauri/target/debug/snippets.exe"
+$releaseExe = Join-Path $repoRoot "src-tauri/target/release/snippets.exe"
 
 Add-Type @"
 using System;
