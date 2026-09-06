@@ -1,6 +1,8 @@
 use std::{fs, path::Path, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
+
+#[cfg(windows)]
 use tauri::{Manager, RunEvent};
 
 #[cfg(windows)]
@@ -333,9 +335,13 @@ pub fn run() {
         .expect("error while building daytasks")
         .run(|app, event| {
             #[cfg(windows)]
-            if let RunEvent::Exit = event {
-                single_instance::destroy(app);
+            {
+                if let RunEvent::Exit = event {
+                    single_instance::destroy(app);
+                }
             }
+            #[cfg(not(windows))]
+            let _ = (app, event);
         });
 }
 
