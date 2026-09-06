@@ -30,7 +30,14 @@ import { insertLineAboveCommand } from "./insert-line";
 import { GFM } from "@lezer/markdown";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { joinToEvent } from "./undo-history";
-import { wordNavCommands } from "./word-nav";
+import {
+  createJiebaProvider,
+  createNoopProvider,
+  createSystemProvider,
+  wordNavCommands,
+  type SegRange,
+  type SegmentProvider,
+} from "./word-nav";
 import { taskCheckboxExtension } from "./task-checkbox";
 import { codeFontExtension } from "./code-font";
 import { dividerExtension, selectBlockOrAllCommand } from "./divider";
@@ -51,10 +58,14 @@ const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 32;
 
 type ThemeChoice = "light" | "dark" | "system";
+/** Word-segmentation engine used by Chinese word navigation (settings.word_seg). */
+type WordSegChoice = "system" | "jieba-standard" | "jieba-fine";
+const DEFAULT_WORD_SEG: WordSegChoice = "jieba-standard";
 
 interface NormalizedSettings {
   font_size: number;
   theme: ThemeChoice;
+  word_seg: WordSegChoice;
   open_files: string[] | null;
   active_file: string | null;
 }
@@ -138,7 +149,44 @@ function normalizeSettings(raw: unknown): NormalizedSettings {
   }
   const active = obj.active_file;
   const active_file = typeof active === "string" && isMarkdownName(active) ? active : null;
-  return { font_size, theme, open_files, active_file };
+  const word_seg =
+    obj.word_seg === "system" || obj.word_seg === "jieba-standard" || obj.word_seg === "jieba-fine"
+      ? obj.word_seg
+      : DEFAULT_WORD_SEG;
+  return { font_size, theme, word_seg, open_files, active_file };
+}
+
+// ---- Word-segmentation engine selection --------------------------------
+
+// Bridges the word-navigation code (word-nav.ts) to the Tauri backend: asks
+// jieba-rs to segment the current editor line. `null` / rejection while the
+// embedded dictionary is still warming up (or IPC fails) is not cached, so
+// the next keystroke simply retries.
+async function requestJiebaSegments(
+  lineText: string,
+  mode: "standard" | "fine",
+): Promise<SegRange[] | null> {
+  try {
+    return await invoke<SegRange[] | null>("segment_line", { text: lineText, mode });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The active engine behind Chinese word navigation, from a settings choice.
+ * The system provider wraps Intl.Segmenter (pre-existing behavior); jieba
+ * providers call the Rust backend and fall back to system on cache miss.
+ */
+function makeWordSegProvider(choice: WordSegChoice): SegmentProvider {
+  const system =
+    typeof Intl.Segmenter === "function" ? createSystemProvider() : createNoopProvider();
+  if (choice === "system") return system;
+  return createJiebaProvider(
+    choice === "jieba-fine" ? "fine" : "standard",
+    system,
+    requestJiebaSegments,
+  );
 }
 
 async function loadSettings(): Promise<NormalizedSettings> {
@@ -164,10 +212,16 @@ async function main(): Promise<void> {
 
   let fontSize = settings.font_size;
   let theme = settings.theme;
+  let wordSeg = settings.word_seg;
   const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
 
   const darkTheme = new Compartment();
   const fontTheme = new Compartment();
+
+  // Active word-segmentation engine for the editor keymap (see word-nav.ts).
+  // Re-resolved on change so the next keystroke in every tab uses the new
+  // engine without a restart.
+  let wordSegProvider = makeWordSegProvider(wordSeg);
 
   function effectiveTheme(): "light" | "dark" {
     if (theme === "system") return darkMode.matches ? "dark" : "light";
@@ -218,12 +272,19 @@ async function main(): Promise<void> {
     setFontSize(DEFAULT_FONT_SIZE);
   }
 
+  function setWordSeg(next: WordSegChoice): void {
+    if (next === wordSeg) return;
+    wordSeg = next;
+    wordSegProvider = makeWordSegProvider(next);
+    persistSoon();
+  }
+
   // Word navigation (Ctrl+Arrow on Windows/Linux, Option+Arrow on macOS, +Shift
   // selection, +Backspace/Delete deletion) jumps between Chinese words instead
   // of skipping a whole CJK run. `mac:` swaps the modifier like CodeMirror's
   // own group-movement bindings, so macOS keeps its native Option+Arrow combo
   // and Cmd+Arrow stays line-boundary movement (defaultKeymap).
-  const wordNav = wordNavCommands();
+  const wordNav = wordNavCommands(() => wordSegProvider);
 
   function makeState(doc: string): EditorState {
     return EditorState.create({
@@ -480,6 +541,7 @@ async function main(): Promise<void> {
     const payload = {
       font_size: fontSize,
       theme,
+      word_seg: wordSeg,
       open_files: tabs.map((t) => t.name),
       active_file: activeIndex >= 0 ? tabs[activeIndex].name : null,
     };
@@ -1343,6 +1405,11 @@ async function main(): Promise<void> {
   themeSelect.value = theme;
   themeSelect.addEventListener("change", () => {
     setTheme(themeSelect.value as ThemeChoice);
+  });
+  const wordSegSelect = document.getElementById("word-seg-select") as HTMLSelectElement;
+  wordSegSelect.value = wordSeg;
+  wordSegSelect.addEventListener("change", () => {
+    setWordSeg(wordSegSelect.value as WordSegChoice);
   });
   document.addEventListener("pointerdown", (event) => {
     if (!settingsEl.hidden && !settingsEl.contains(event.target as Node)) closeSettings();

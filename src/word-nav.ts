@@ -69,14 +69,102 @@ export interface WordSegment {
 
 // Word-like segments of a line, with a flag for whether the segment contains
 // CJK/kana/Hangul characters (only such segments create segmentation stops).
+export interface WordSegment {
+  start: number;
+  end: number;
+  hasCJK: boolean;
+}
+
+// A source of word-like segments for one editor line. The walk logic below
+// only depends on this seam, so engines are interchangeable (Intl.Segmenter
+// in-process, jieba over IPC) and switching engines in settings takes effect
+// on the next keystroke in every open tab.
+export interface SegmentProvider {
+  segment(lineText: string): WordSegment[];
+}
+
+function hasCJK(text: string): boolean {
+  return CJK_RE.test(text);
+}
+
+// Word-like segments of a line from an Intl.Segmenter.
 export function segmentLine(segmenter: Intl.Segmenter, lineText: string): WordSegment[] {
   const out: WordSegment[] = [];
   for (const s of segmenter.segment(lineText)) {
     if (s.isWordLike) {
-      out.push({ start: s.index, end: s.index + s.segment.length, hasCJK: CJK_RE.test(s.segment) });
+      out.push({ start: s.index, end: s.index + s.segment.length, hasCJK: hasCJK(s.segment) });
     }
   }
   return out;
+}
+
+// The "system" engine: the WebView's built-in Intl.Segmenter (pre-existing
+// behavior). Requires Intl.Segmenter support in the runtime.
+export function createSystemProvider(): SegmentProvider {
+  const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
+  return { segment: (lineText) => segmentLine(segmenter, lineText) };
+}
+
+// No word stops at all: a CJK run behaves like CodeMirror's native whole-run
+// jump. Used as a last-resort fallback when no engine is available.
+export function createNoopProvider(): SegmentProvider {
+  return { segment: () => [] };
+}
+
+// One word-like span of a line, as UTF-16 offsets (matches WordSegment minus
+// the derived hasCJK flag).
+export interface SegRange {
+  start: number;
+  end: number;
+}
+
+// The jieba engine over IPC, with a per-line-text cache. `request` must
+// resolve to UTF-16 spans for the line, or null/reject while the engine is
+// warming up or unavailable. Cache misses are served by `fallback` (usually
+// the system provider) while the request is in flight, so a keystroke right
+// after an edit never blocks: it behaves like the old engine once, then the
+// cache takes over. The line text is the key, so edits invalidate entries
+// automatically; entries accumulate only for lines the cursor actually
+// walked (a few thousand rows at most per long session).
+export function createJiebaProvider(
+  mode: "standard" | "fine",
+  fallback: SegmentProvider,
+  request: (lineText: string, mode: "standard" | "fine") => Promise<SegRange[] | null>,
+): SegmentProvider {
+  const cache = new Map<string, WordSegment[]>();
+  const pending = new Set<string>();
+  return {
+    segment(lineText) {
+      const cached = cache.get(lineText);
+      if (cached) return cached;
+      if (!pending.has(lineText)) {
+        pending.add(lineText);
+        // Both callbacks run directly on the request promise (before any
+        // awaiter of that same promise resumes), so the pending marker is
+        // cleared in time for the next keystroke to issue a fresh request.
+        void request(lineText, mode).then(
+          (ranges) => {
+            if (ranges) {
+              cache.set(
+                lineText,
+                ranges.map((r) => ({
+                  start: r.start,
+                  end: r.end,
+                  hasCJK: hasCJK(lineText.slice(r.start, r.end)),
+                })),
+              );
+            }
+            pending.delete(lineText);
+          },
+          () => {
+            // Engine unavailable: keep serving the fallback, allow a retry.
+            pending.delete(lineText);
+          },
+        );
+      }
+      return fallback.segment(lineText);
+    },
+  };
 }
 
 function segmentAt(segments: WordSegment[], pos: number): WordSegment | null {
@@ -109,7 +197,7 @@ function boundaryHasCJK(segments: WordSegment[], pos: number): boolean {
 //   - line breaks are space characters, so one press can cross a line;
 //   - at a segmenter word boundary flanked by a CJK segment, stop: moving
 //     right that is the end of the current word, moving left the start.
-export function moveByWord(doc: Text, pos: number, forward: boolean, segmenter: Intl.Segmenter): number {
+export function moveByWord(doc: Text, pos: number, forward: boolean, provider: SegmentProvider): number {
   let line = doc.lineAt(pos);
   let cat: Category | null = null;
   let segments: WordSegment[] = [];
@@ -155,7 +243,7 @@ export function moveByWord(doc: Text, pos: number, forward: boolean, segmenter: 
     if (cat == null || cat == "Space") {
       cat = charCategory(char);
       if (cat == "Word") {
-        segments = segmentLine(segmenter, line.text);
+        segments = provider.segment(line.text);
       }
     }
 
@@ -179,7 +267,7 @@ export function moveByWord(doc: Text, pos: number, forward: boolean, segmenter: 
 // without adopting its category, at a line edge exactly one character
 // crosses into the adjacent line) plus segmenter word boundaries inside CJK
 // Word runs. Returns an absolute document position.
-export function deleteTargetByWord(doc: Text, pos: number, forward: boolean, segmenter: Intl.Segmenter): number {
+export function deleteTargetByWord(doc: Text, pos: number, forward: boolean, provider: SegmentProvider): number {
   const line = doc.lineAt(pos);
   const lineText = line.text;
   const head = pos - line.from;
@@ -210,7 +298,7 @@ export function deleteTargetByWord(doc: Text, pos: number, forward: boolean, seg
       cat = nextCat;
       if (cat == "Word" && !segInfoSet) {
         segInfoSet = true;
-        segments = segmentLine(segmenter, lineText);
+        segments = provider.segment(lineText);
       }
     }
     p = next;
@@ -248,28 +336,28 @@ function extendSel(target: EditorView, forward: boolean, how: (range: SelectionR
   return true;
 }
 
-function cursorByWord(view: EditorView, forward: boolean, segmenter: Intl.Segmenter): boolean {
+function cursorByWord(view: EditorView, forward: boolean, provider: SegmentProvider): boolean {
   const doc = view.state.doc;
   return moveSel(view, (range) =>
     range.empty
-      ? EditorSelection.cursor(moveByWord(doc, range.head, forward, segmenter))
+      ? EditorSelection.cursor(moveByWord(doc, range.head, forward, provider))
       : EditorSelection.cursor(forward ? range.to : range.from),
   );
 }
 
-function selectByWord(view: EditorView, forward: boolean, segmenter: Intl.Segmenter): boolean {
+function selectByWord(view: EditorView, forward: boolean, provider: SegmentProvider): boolean {
   const doc = view.state.doc;
-  return extendSel(view, forward, (range) => EditorSelection.cursor(moveByWord(doc, range.head, forward, segmenter)));
+  return extendSel(view, forward, (range) => EditorSelection.cursor(moveByWord(doc, range.head, forward, provider)));
 }
 
-function deleteByWord(view: EditorView, forward: boolean, segmenter: Intl.Segmenter): boolean {
+function deleteByWord(view: EditorView, forward: boolean, provider: SegmentProvider): boolean {
   if (view.state.readOnly) return false;
   let event = "delete.selection";
   const { state } = view;
   const changes = state.changeByRange((range) => {
     let { from, to } = range;
     if (from == to) {
-      const towards = deleteTargetByWord(state.doc, from, forward, segmenter);
+      const towards = deleteTargetByWord(state.doc, from, forward, provider);
       if (towards < from) {
         event = "delete.backward";
       } else if (towards > from) {
@@ -301,8 +389,10 @@ export interface WordNavCommands {
 }
 
 // Returns the hybrid commands, or CodeMirror's originals when Intl.Segmenter
-// is unavailable (ancient WebView2 runtimes).
-export function wordNavCommands(): WordNavCommands {
+// is unavailable (ancient WebView2 runtimes). `getProvider` is consulted on
+// every keystroke so changing the engine in settings takes effect on the next
+// keypress, in every open tab.
+export function wordNavCommands(getProvider: () => SegmentProvider): WordNavCommands {
   if (typeof Intl.Segmenter != "function") {
     return {
       cursorLeft: cursorGroupLeft,
@@ -313,13 +403,12 @@ export function wordNavCommands(): WordNavCommands {
       deleteForward: deleteGroupForward,
     };
   }
-  const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
   return {
-    cursorLeft: (view) => cursorByWord(view, false, segmenter),
-    cursorRight: (view) => cursorByWord(view, true, segmenter),
-    selectLeft: (view) => selectByWord(view, false, segmenter),
-    selectRight: (view) => selectByWord(view, true, segmenter),
-    deleteBackward: (view) => deleteByWord(view, false, segmenter),
-    deleteForward: (view) => deleteByWord(view, true, segmenter),
+    cursorLeft: (view) => cursorByWord(view, false, getProvider()),
+    cursorRight: (view) => cursorByWord(view, true, getProvider()),
+    selectLeft: (view) => selectByWord(view, false, getProvider()),
+    selectRight: (view) => selectByWord(view, true, getProvider()),
+    deleteBackward: (view) => deleteByWord(view, false, getProvider()),
+    deleteForward: (view) => deleteByWord(view, true, getProvider()),
   };
 }

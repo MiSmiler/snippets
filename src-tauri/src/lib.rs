@@ -8,10 +8,14 @@ use tauri::{Manager, RunEvent};
 #[cfg(windows)]
 mod single_instance;
 
+mod segment;
+
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const DEFAULT_FONT_SIZE: u32 = 16;
 const MIN_FONT_SIZE: u32 = 10;
 const MAX_FONT_SIZE: u32 = 32;
+/// Default word-segmentation engine for word navigation (settings.word_seg).
+const DEFAULT_WORD_SEG: &str = "jieba-standard";
 
 /// Resolve the directory next to the executable: the app folder is the whole
 /// data folder.
@@ -224,6 +228,9 @@ fn rename_file(payload: RenameFileArgs) -> Result<(), String> {
 pub struct Settings {
     pub font_size: u32,
     pub theme: String,
+    /// Word-segmentation engine for word navigation: "system" (WebView's
+    /// Intl.Segmenter), "jieba-standard", or "jieba-fine".
+    pub word_seg: String,
     /// Last session: note file names in tab order. `None` (absent in the
     /// JSON) means no session was ever recorded -- a fresh install or an
     /// upgrade from the single-file era -- and the frontend falls back to
@@ -238,6 +245,7 @@ impl Default for Settings {
         Self {
             font_size: DEFAULT_FONT_SIZE,
             theme: "system".to_string(),
+            word_seg: DEFAULT_WORD_SEG.to_string(),
             open_files: None,
             active_file: None,
         }
@@ -261,6 +269,10 @@ fn save_settings(settings: Settings) -> Result<(), String> {
         "light" | "dark" | "system" => settings.theme,
         _ => "system".to_string(),
     };
+    let word_seg = match settings.word_seg.as_str() {
+        "system" | "jieba-standard" | "jieba-fine" => settings.word_seg,
+        _ => DEFAULT_WORD_SEG.to_string(),
+    };
     let open_files = settings.open_files.map(|names| {
         let mut seen = std::collections::HashSet::new();
         names
@@ -271,6 +283,7 @@ fn save_settings(settings: Settings) -> Result<(), String> {
     let clamped = Settings {
         font_size: settings.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE),
         theme,
+        word_seg,
         open_files,
         active_file: settings.active_file,
     };
@@ -300,6 +313,10 @@ fn set_dev_window_title<R: tauri::Runtime, M: tauri::Manager<R>>(
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            // Load the jieba dictionary on a background thread so the first
+            // word-navigation keystroke never waits on it.
+            segment::warm_up();
+
             #[cfg(windows)]
             // A second instance of the same build profile focuses the existing
             // window instead of starting a competing writer for the notes.
@@ -329,7 +346,8 @@ pub fn run() {
             save_file,
             rename_file,
             load_settings,
-            save_settings
+            save_settings,
+            segment::segment_line
         ])
         .build(tauri::generate_context!())
         .expect("error while building snippets")

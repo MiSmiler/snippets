@@ -4,18 +4,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Text } from "@codemirror/state";
-import { charCategory, deleteTargetByWord, moveByWord } from "../src/word-nav.ts";
+import { charCategory, createSystemProvider, deleteTargetByWord, moveByWord } from "../src/word-nav.ts";
 
-const segmenter = new Intl.Segmenter("zh", { granularity: "word" });
+// The system provider wraps Intl.Segmenter, so these golden tests keep
+// asserting the exact pre-existing (ICU) behavior.
+const provider = createSystemProvider();
 
 function doc(text: string) {
   return Text.of(text.split("\n"));
 }
 
-const right = (text: string, pos: number) => moveByWord(doc(text), pos, true, segmenter);
-const left = (text: string, pos: number) => moveByWord(doc(text), pos, false, segmenter);
-const delBack = (text: string, pos: number) => deleteTargetByWord(doc(text), pos, false, segmenter);
-const delFwd = (text: string, pos: number) => deleteTargetByWord(doc(text), pos, true, segmenter);
+const right = (text: string, pos: number) => moveByWord(doc(text), pos, true, provider);
+const left = (text: string, pos: number) => moveByWord(doc(text), pos, false, provider);
+const delBack = (text: string, pos: number) => deleteTargetByWord(doc(text), pos, false, provider);
+const delFwd = (text: string, pos: number) => deleteTargetByWord(doc(text), pos, true, provider);
 
 test("charCategory mirrors CodeMirror's default categorizer", () => {
   assert.equal(charCategory("你"), "Word");
