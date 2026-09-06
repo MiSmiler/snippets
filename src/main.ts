@@ -41,6 +41,7 @@ import {
 import { taskCheckboxExtension } from "./task-checkbox";
 import { codeFontExtension } from "./code-font";
 import { dividerExtension, selectBlockOrAllCommand } from "./divider";
+import { reconfigureScrollCushion, scrollPastEndExtension } from "./scroll-past-end";
 import {
   DATA_MD,
   freeUntitledName,
@@ -245,6 +246,7 @@ async function main(): Promise<void> {
     return [
       darkTheme.reconfigure(effectiveTheme() === "dark" ? oneDark : []),
       fontTheme.reconfigure(EditorView.theme({ "&": { fontSize: `${fontSize}px` } })),
+      reconfigureScrollCushion(fontSize),
     ];
   }
 
@@ -416,6 +418,11 @@ async function main(): Promise<void> {
           "&.cm-focused": { outline: "none" },
         }),
         fontTheme.of(EditorView.theme({ "&": { fontSize: `${fontSize}px` } })),
+        // Overscroll past the end of the note: wheel/trackpad scroll into a
+        // deep blank region (last line can reach the viewport top), while
+        // caret-driven reveals keep a 5-line cushion below the caret instead
+        // of gluing it to the bottom edge (see scroll-past-end.ts).
+        scrollPastEndExtension(fontSize),
       ],
     });
   }
