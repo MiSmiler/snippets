@@ -14,6 +14,10 @@ const SETTINGS_FILE_NAME: &str = "settings.json";
 const DEFAULT_FONT_SIZE: u32 = 16;
 const MIN_FONT_SIZE: u32 = 10;
 const MAX_FONT_SIZE: u32 = 32;
+/// Whole-app zoom as a percentage (100 = 1.0), adjusted by Ctrl+=/-/0.
+const DEFAULT_SCALE: u32 = 100;
+const MIN_SCALE: u32 = 50;
+const MAX_SCALE: u32 = 200;
 /// Default word-segmentation engine for word navigation (settings.word_seg).
 const DEFAULT_WORD_SEG: &str = "jieba-standard";
 
@@ -227,6 +231,8 @@ fn rename_file(payload: RenameFileArgs) -> Result<(), String> {
 #[serde(default)]
 pub struct Settings {
     pub font_size: u32,
+    /// Whole-app zoom percentage (100 = 1.0); Ctrl+=/-/0 in the frontend.
+    pub scale: u32,
     pub theme: String,
     /// Word-segmentation engine for word navigation: "system" (WebView's
     /// Intl.Segmenter), "jieba-standard", or "jieba-fine".
@@ -244,6 +250,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             font_size: DEFAULT_FONT_SIZE,
+            scale: DEFAULT_SCALE,
             theme: "system".to_string(),
             word_seg: DEFAULT_WORD_SEG.to_string(),
             open_files: None,
@@ -282,6 +289,7 @@ fn save_settings(settings: Settings) -> Result<(), String> {
     });
     let clamped = Settings {
         font_size: settings.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE),
+        scale: settings.scale.clamp(MIN_SCALE, MAX_SCALE),
         theme,
         word_seg,
         open_files,

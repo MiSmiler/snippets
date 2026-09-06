@@ -57,6 +57,12 @@ const SESSION_DEBOUNCE_MS = 300;
 const DEFAULT_FONT_SIZE = 16;
 const MIN_FONT_SIZE = 10;
 const MAX_FONT_SIZE = 32;
+/** Whole-app zoom as a percentage (100 = 1.0); font size stays a separate
+ *  base editor size only changed from the settings panel. */
+const DEFAULT_SCALE = 100;
+const MIN_SCALE = 50;
+const MAX_SCALE = 200;
+const SCALE_STEP = 5;
 
 type ThemeChoice = "light" | "dark" | "system";
 /** Word-segmentation engine used by Chinese word navigation (settings.word_seg). */
@@ -65,6 +71,7 @@ const DEFAULT_WORD_SEG: WordSegChoice = "jieba-standard";
 
 interface NormalizedSettings {
   font_size: number;
+  scale: number;
   theme: ThemeChoice;
   word_seg: WordSegChoice;
   open_files: string[] | null;
@@ -132,6 +139,11 @@ function normalizeSettings(raw: unknown): NormalizedSettings {
     typeof font === "number" && font >= MIN_FONT_SIZE && font <= MAX_FONT_SIZE
       ? Math.round(font)
       : DEFAULT_FONT_SIZE;
+  const zoom = obj.scale;
+  const scale =
+    typeof zoom === "number" && zoom >= MIN_SCALE && zoom <= MAX_SCALE
+      ? Math.round(zoom)
+      : DEFAULT_SCALE;
   const theme =
     obj.theme === "light" || obj.theme === "dark" || obj.theme === "system"
       ? (obj.theme as ThemeChoice)
@@ -154,7 +166,7 @@ function normalizeSettings(raw: unknown): NormalizedSettings {
     obj.word_seg === "system" || obj.word_seg === "jieba-standard" || obj.word_seg === "jieba-fine"
       ? obj.word_seg
       : DEFAULT_WORD_SEG;
-  return { font_size, theme, word_seg, open_files, active_file };
+  return { font_size, scale, theme, word_seg, open_files, active_file };
 }
 
 // ---- Word-segmentation engine selection --------------------------------
@@ -212,6 +224,7 @@ async function main(): Promise<void> {
   const [settings, diskFiles] = await Promise.all([loadSettings(), listFiles()]);
 
   let fontSize = settings.font_size;
+  let scale = settings.scale;
   let theme = settings.theme;
   let wordSeg = settings.word_seg;
   const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
@@ -231,6 +244,12 @@ async function main(): Promise<void> {
 
   function applyDocumentTheme(): void {
     document.documentElement.dataset.theme = effectiveTheme();
+  }
+
+  /** Whole-app zoom: CSS zoom on <html> scales every pixel layout (editor
+   *  chrome included) like a browser zoom. `scale` is a percentage. */
+  function applyScale(): void {
+    document.documentElement.style.setProperty("zoom", `${scale}%`);
   }
 
   /** Update the theme/font compartments in every tab state. */
@@ -265,6 +284,7 @@ async function main(): Promise<void> {
     persistSoon();
   }
 
+  // Font size is changed only from the settings panel; Ctrl+=/-/0 zoom.
   function adjustFontSize(delta: number): void {
     const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, fontSize + delta));
     if (next !== fontSize) setFontSize(next);
@@ -272,6 +292,22 @@ async function main(): Promise<void> {
 
   function resetFontSize(): void {
     setFontSize(DEFAULT_FONT_SIZE);
+  }
+
+  function setScale(next: number): void {
+    scale = next;
+    applyScale();
+    applyScaleLabel();
+    persistSoon();
+  }
+
+  function adjustScale(delta: number): void {
+    const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale + delta));
+    if (next !== scale) setScale(next);
+  }
+
+  function resetScale(): void {
+    setScale(DEFAULT_SCALE);
   }
 
   function setWordSeg(next: WordSegChoice): void {
@@ -350,31 +386,33 @@ async function main(): Promise<void> {
                 return true;
               },
             },
+            // Whole-app zoom (see applyScale). Font size has no keyboard
+            // shortcut anymore: it is changed only from the settings panel.
             {
               key: "Mod-=",
               run: () => {
-                adjustFontSize(1);
+                adjustScale(SCALE_STEP);
                 return true;
               },
             },
             {
               key: "Mod-+",
               run: () => {
-                adjustFontSize(1);
+                adjustScale(SCALE_STEP);
                 return true;
               },
             },
             {
               key: "Mod--",
               run: () => {
-                adjustFontSize(-1);
+                adjustScale(-SCALE_STEP);
                 return true;
               },
             },
             {
               key: "Mod-0",
               run: () => {
-                resetFontSize();
+                resetScale();
                 return true;
               },
             },
@@ -549,6 +587,7 @@ async function main(): Promise<void> {
   function writeSettings(): Promise<void> {
     const payload = {
       font_size: fontSize,
+      scale,
       theme,
       word_seg: wordSeg,
       open_files: tabs.map((t) => t.name),
@@ -1121,6 +1160,27 @@ async function main(): Promise<void> {
       }
       return;
     }
+    // Zoom works app-wide (also while dialogs are open, like a browser).
+    // When the editor is focused, CodeMirror's keymap above already handled
+    // these keys and marked the event defaultPrevented, so nothing doubles.
+    if (mod) {
+      const k = event.key.toLowerCase();
+      if (k === "=" || k === "+") {
+        event.preventDefault();
+        adjustScale(SCALE_STEP);
+        return;
+      }
+      if (k === "-") {
+        event.preventDefault();
+        adjustScale(-SCALE_STEP);
+        return;
+      }
+      if (k === "0") {
+        event.preventDefault();
+        resetScale();
+        return;
+      }
+    }
     if (confirmResolve || paletteOpen || renameOpen || tabMenuOpen) return; // dialogs own their keys
     if (!mod) return;
     const key = event.key.toLowerCase();
@@ -1394,6 +1454,11 @@ async function main(): Promise<void> {
 
   const settingsEl = document.getElementById("settings")!;
   const fontSizeLabel = document.getElementById("font-size-value")!;
+  const scaleLabel = document.getElementById("scale-value")!;
+
+  function applyScaleLabel(): void {
+    scaleLabel.textContent = `${scale}%`;
+  }
 
   function applyFontSizeLabel(): void {
     fontSizeLabel.textContent = String(fontSize);
@@ -1410,6 +1475,9 @@ async function main(): Promise<void> {
   document.getElementById("font-minus")!.addEventListener("click", () => adjustFontSize(-1));
   document.getElementById("font-plus")!.addEventListener("click", () => adjustFontSize(1));
   document.getElementById("font-reset")!.addEventListener("click", resetFontSize);
+  document.getElementById("scale-minus")!.addEventListener("click", () => adjustScale(-SCALE_STEP));
+  document.getElementById("scale-plus")!.addEventListener("click", () => adjustScale(SCALE_STEP));
+  document.getElementById("scale-reset")!.addEventListener("click", resetScale);
   const themeSelect = document.getElementById("theme-select") as HTMLSelectElement;
   themeSelect.value = theme;
   themeSelect.addEventListener("change", () => {
@@ -1466,6 +1534,8 @@ async function main(): Promise<void> {
 
   fillEmptyPage();
   applyDocumentTheme();
+  applyScale();
+  applyScaleLabel();
   applyFontSizeLabel();
 
   async function presentStartup(plan: StartupPlan): Promise<void> {
