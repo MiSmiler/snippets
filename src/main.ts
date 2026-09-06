@@ -377,9 +377,11 @@ async function main(): Promise<void> {
               },
             },
             // Ctrl+A selects the block the caret is in (`---` divider rows
-            // split the document into blocks); a second press -- or any
-            // state where the whole block is already selected -- selects
-            // everything. Overrides defaultKeymap's selectAll.
+            // split the document into blocks; a divider belongs to the block
+            // above it, so a caret on the divider selects that whole block);
+            // a second press -- or any state where the current selection
+            // already equals the block target -- selects everything.
+            // Overrides defaultKeymap's selectAll.
             {
               key: "Mod-a",
               run: selectBlockOrAllCommand(),

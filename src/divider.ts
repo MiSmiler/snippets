@@ -8,29 +8,39 @@
 // Nested contexts are excluded too: `> ---` inside a blockquote and an
 // indented `---` inside a list item are not document-level dividers.
 //
-// Dividers partition the document into *blocks* (maximal runs of lines that
-// are not divider rows; consecutive dividers merge into one boundary). They
-// exist purely for selection: a divider row belongs to no block. A block's
-// text ends at the last character of its final *non-blank* line: blank lines
-// that merely separate the content from the divider below (or from the end
-// of the document) are trailing margins, not block text, and neither they
-// nor the final line's line break are part of the block. Copying a block
-// therefore never carries a trailing blank line or newline along; blank
-// lines sandwiched between content lines stay put. Ctrl+A is redefined as a
-// stateless two-level selection:
-//   - first press selects the block containing the caret;
-//   - a second press (or any state where the current block is already fully
-//     selected) selects the whole document, which stays selected on further
-//     presses.
-// Exceptions: a caret on a divider row, in a block with no visible content
-// (blank-only), or in a document with no dividers selects the whole document
-// on the first press -- so Ctrl+A never selects nothing.
+// Every line belongs to exactly one *block*. A block is a maximal segment of
+// non-divider lines plus the divider row that terminates it: a divider
+// belongs to the block above its row. A divider with only dividers (or
+// nothing) above it -- a leading `---` or one repeated after another -- owns
+// no segment and stands alone as a one-row block, so consecutive dividers
+// never merge. Each block decomposes into up to four parts, in order:
+//
+//     front whitespace | text | tail whitespace | divider
+//
+// `text` is the real content: from the first non-blank line through the last
+// non-blank line, keeping blank lines in between. Blank lines before the
+// text are front whitespace; blank lines after it (up to the divider or the
+// end of the document) are tail whitespace. A block with no text at all
+// stores its whitespace as tail whitespace -- never front -- so front
+// whitespace can only exist alongside text.
+//
+// Ctrl+A is a stateless two-level selection. The first press targets the
+// caret's block:
+//   - a block with text: a caret anywhere except on the divider selects the
+//     text alone (a caret parked in front/tail whitespace still selects the
+//     text); a caret ON the block's divider selects the whole block (front
+//     whitespace + text + tail whitespace + divider);
+//   - a block without text (blank-only, or a lone divider row): the caret
+//     always selects the whole block (its whitespace and divider, if any).
+// The rule is stateless: the target is a pure function of the caret line,
+// and every dispatch leaves the caret on a line that maps back to the same
+// target, so "a second press selects everything" needs no remembered state.
 //
 // The rendering mirrors the task-checkbox extension: a widget replaces the
 // `---` glyphs while the source text stays editable underneath; as soon as
 // the line is no longer exactly `---` the decoration disappears.
 
-import { EditorSelection, type EditorState, type Range } from "@codemirror/state";
+import { EditorSelection, type EditorState, type Range, type Text } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -84,72 +94,171 @@ export function collectDividerRanges(state: EditorState): DividerInfo[] {
   return dividers;
 }
 
-/** A content block: an offset range plus whether it holds no visible text. */
-export interface BlockSpan {
+/** A contiguous range inside the document (inclusive of its end). */
+export interface LineRange {
   readonly from: number;
   readonly to: number;
-  /** True when the block has no non-whitespace content (blank-only). */
-  readonly blank: boolean;
-}
-
-function isDividerLine(dividers: DividerInfo[], line: number): boolean {
-  return dividers.some((d) => d.line === line);
 }
 
 /**
- * The block containing `pos` (as an offset range covering the block's text
- * through the last character of its last non-blank line), or null when `pos`
- * sits on a divider row and therefore belongs to no block. Trailing blank
- * lines of the block (margins in front of a divider or at the document end)
- * are trimmed away, so the range never ends in blank lines or a stray
- * newline. A document without dividers is one block spanning everything.
+ * One block: the front-whitespace / text / tail-whitespace / divider
+ * decomposition of a line segment (see the module comment). `from`/`to`
+ * cover the whole block from the first row's start to the last row's last
+ * character; `fromLine`/`toLine` are its 1-based row numbers. Only `text`
+ * may span multiple rows; every other part is a run of blank rows or a
+ * single divider row, so a part's characters are its rows' line breaks.
  */
-export function blockAt(state: EditorState, pos: number): BlockSpan | null {
-  const doc = state.doc;
-  const dividers = collectDividerRanges(state);
-  const line = doc.lineAt(Math.max(0, Math.min(pos, doc.length)));
-  if (isDividerLine(dividers, line.number)) return null;
+export interface Block {
+  readonly from: number;
+  readonly to: number;
+  readonly fromLine: number;
+  readonly toLine: number;
+  /** Blank rows before the text (only ever present alongside `text`). */
+  readonly leadWhite: LineRange | null;
+  /** The real content, front/tail blank margins trimmed, inner blanks kept. */
+  readonly text: LineRange | null;
+  /** Blank rows after the text; the whole whitespace of a blank-only block. */
+  readonly tailWhite: LineRange | null;
+  /** The divider row this block owns, or null when the block ends elsewhere. */
+  readonly divider: DividerInfo | null;
+}
 
-  let start = line.number;
-  while (start > 1 && !isDividerLine(dividers, start - 1)) start -= 1;
-  let end = line.number;
-  while (end < doc.lines && !isDividerLine(dividers, end + 1)) end += 1;
-
-  // Drop blank lines at the block's tail. A blank line is only meaningful
-  // inside a block when content follows it; at the tail it is a separator
-  // margin that should not end up in a copy (or a retype over the block).
-  while (end > start && doc.line(end).text.trim().length === 0) end -= 1;
-
-  const from = doc.line(start).from;
-  // End at the last character of the block's final (non-blank) line. The line
-  // break that would otherwise follow it is not part of the block, so copying
-  // never drags a trailing newline along. A block at the document end still
-  // reaches doc.length when its last line runs to the end.
-  const to = doc.line(end).to;
-  return { from, to, blank: doc.sliceString(from, to).trim().length === 0 };
+function isBlankLine(doc: Text, lineNo: number): boolean {
+  return doc.line(lineNo).text.trim().length === 0;
 }
 
 /**
- * The selection the next Ctrl+A should make (pure, for tests): the block the
- * caret is in, or the whole document when the block is already fully selected
- * (second press), when everything is already selected, when the caret is on a
- * divider row, or when the current block has no content to select.
+ * Build the block for the non-divider rows `lo..hi` (inclusive, empty when
+ * `lo > hi`) plus the divider that terminates them, or for `lo..hi` alone
+ * when `divider` is null (the final segment after the last divider).
+ */
+function buildSegment(
+  doc: Text,
+  lo: number,
+  hi: number,
+  divider: DividerInfo | null,
+): Block {
+  if (lo > hi) {
+    // No rows above the divider (leading divider or one repeated after
+    // another): the block is just that divider row.
+    const row = doc.line(divider!.line);
+    return {
+      from: row.from,
+      to: row.to,
+      fromLine: divider!.line,
+      toLine: divider!.line,
+      leadWhite: null,
+      text: null,
+      tailWhite: null,
+      divider,
+    };
+  }
+
+  let firstTextLine = -1;
+  let lastTextLine = -1;
+  for (let n = lo; n <= hi; n += 1) {
+    if (!isBlankLine(doc, n)) {
+      if (firstTextLine < 0) firstTextLine = n;
+      lastTextLine = n;
+    }
+  }
+
+  const firstLine = doc.line(lo);
+  const segmentEnd = divider ? divider.from : doc.length;
+
+  if (firstTextLine < 0) {
+    // Blank-only: the whitespace is tail whitespace, running to the divider
+    // (or the document end); with a divider the block ends on that row.
+    const from = firstLine.from;
+    return {
+      from,
+      to: divider ? divider.to : doc.length,
+      fromLine: lo,
+      toLine: divider ? divider.line : hi,
+      leadWhite: null,
+      text: null,
+      tailWhite: from < segmentEnd ? { from, to: segmentEnd } : null,
+      divider,
+    };
+  }
+
+  const textFrom = doc.line(firstTextLine).from;
+  const textTo = doc.line(lastTextLine).to;
+  return {
+    from: firstLine.from,
+    to: divider ? divider.to : doc.length,
+    fromLine: lo,
+    toLine: divider ? divider.line : hi,
+    leadWhite: firstLine.from < textFrom ? { from: firstLine.from, to: textFrom } : null,
+    text: { from: textFrom, to: textTo },
+    tailWhite: textTo < segmentEnd ? { from: textTo, to: segmentEnd } : null,
+    divider,
+  };
+}
+
+/**
+ * Partition the document into blocks, top to bottom. Every row -- including
+ * every divider row -- belongs to exactly one block. A document without
+ * dividers is a single block covering everything.
+ */
+export function collectBlocks(state: EditorState): Block[] {
+  const doc = state.doc;
+  const blocks: Block[] = [];
+  let previousDividerLine = 0;
+  for (const divider of collectDividerRanges(state)) {
+    blocks.push(buildSegment(doc, previousDividerLine + 1, divider.line - 1, divider));
+    previousDividerLine = divider.line;
+  }
+  if (previousDividerLine < doc.lines) {
+    blocks.push(buildSegment(doc, previousDividerLine + 1, doc.lines, null));
+  }
+  return blocks;
+}
+
+/**
+ * The block owning the line at `pos`. Every clamped position sits on a row
+ * that belongs to exactly one block, so this never returns null.
+ */
+export function blockAt(state: EditorState, pos: number): Block {
+  const doc = state.doc;
+  const lineNo = doc.lineAt(Math.max(0, Math.min(pos, doc.length))).number;
+  const blocks = collectBlocks(state);
+  return blocks.find((b) => b.fromLine <= lineNo && lineNo <= b.toLine)!;
+}
+
+/** The first-press Ctrl+A target for a caret parked on `caretLine`. */
+function firstPressTarget(block: Block, caretLine: number): { from: number; to: number } {
+  const onDivider = block.divider !== null && block.divider.line === caretLine;
+  if (block.text !== null && !onDivider) {
+    // Caret in a block with content (its front whitespace, its text, or its
+    // tail whitespace): select just the text.
+    return { from: block.text.from, to: block.text.to };
+  }
+  // Caret on the block's divider, or in a content-less block: select the
+  // whole block (front whitespace + text + tail whitespace + divider, or
+  // the block's whitespace and/or divider alone).
+  return { from: block.from, to: block.to };
+}
+
+/**
+ * The selection the next Ctrl+A should make (pure, for tests). First press:
+ * see `firstPressTarget`. The whole document when everything is already
+ * selected, or when the current selection already equals what a first press
+ * would make from the caret (a second press) -- which stays selected on
+ * further presses.
  */
 export function nextSelectionTarget(state: EditorState): { from: number; to: number } {
   const doc = state.doc;
   const sel = state.selection.main;
   const len = doc.length;
-  const wholeSelected = sel.from === 0 && sel.to === len;
+  if (sel.from === 0 && sel.to === len) return { from: 0, to: len };
+  const caretLine = doc.lineAt(Math.max(0, Math.min(sel.head, len))).number;
   const block = blockAt(state, sel.head);
-  if (
-    !block ||
-    block.blank ||
-    wholeSelected ||
-    (!sel.empty && sel.from === block.from && sel.to === block.to)
-  ) {
+  const target = firstPressTarget(block, caretLine);
+  if (!sel.empty && sel.from === target.from && sel.to === target.to) {
     return { from: 0, to: len };
   }
-  return { from: block.from, to: block.to };
+  return target;
 }
 
 /** Keymap command: select the caret's block, or the whole document (see
