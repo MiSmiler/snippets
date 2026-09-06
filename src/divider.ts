@@ -10,8 +10,11 @@
 //
 // Dividers partition the document into *blocks* (maximal runs of lines that
 // are not divider rows; consecutive dividers merge into one boundary). They
-// exist purely for selection: a divider row belongs to no block. Ctrl+A is
-// redefined as a stateless two-level selection:
+// exist purely for selection: a divider row belongs to no block. A block's
+// text ends at the last character of its final line -- the line break that
+// would otherwise sit between that line and the divider below is not part of
+// the block, so copying a block never carries a trailing newline (or blank
+// line) along. Ctrl+A is redefined as a stateless two-level selection:
 //   - first press selects the block containing the caret;
 //   - a second press (or any state where the current block is already fully
 //     selected) selects the whole document, which stays selected on further
@@ -108,8 +111,11 @@ export function blockAt(state: EditorState, pos: number): BlockSpan | null {
   while (end < doc.lines && !isDividerLine(dividers, end + 1)) end += 1;
 
   const from = doc.line(start).from;
-  // Run to just past the last line's break (never past the document end).
-  const to = Math.min(doc.line(end).to + 1, doc.length);
+  // End at the last character of the block's final line. The line break that
+  // would separate that line from the divider below is left out, so copying
+  // a block (or retyping over it) never drags the divider's adjacent newline
+  // along. A block that runs to the document end still reaches doc.length.
+  const to = doc.line(end).to;
   return { from, to, blank: doc.sliceString(from, to).trim().length === 0 };
 }
 
