@@ -12,8 +12,17 @@
 // naturally excludes fenced code. Ordered-list tasks (`1. [ ]`) are skipped.
 // Empty items written by the Enter continuation (`- [ ] ` with a trailing
 // space) parse as TaskMarker and render like any other item.
+//
+// The checkbox is a preview, not an edit: while the caret sits on or inside
+// the `[ ]` span -- or while a selection so much as touches it (endpoints
+// included) -- the widget is suppressed and the span shows as its plain
+// source text, so the raw marker stays visible while being edited or
+// selected (see preview-gate.ts). Only the checkbox widget is a preview; the
+// dim mark on checked items is markdown syntax styling and is never
+// suppressed.
 
 import { EditorState, type Range } from "@codemirror/state";
+import { sameMask, suppressionMask } from "./preview-gate.ts";
 import {
   Decoration,
   EditorView,
@@ -125,20 +134,42 @@ class TaskCheckboxWidget extends WidgetType {
 
 const taskDoneMark = Decoration.mark({ class: "cm-task-done" });
 
-function computeDecorations(view: EditorView): DecorationSet {
-  const markers = collectTaskMarkers(view.state);
+/**
+ * The task markers whose checkboxes should render, given the main selection
+ * extent and the editor's focus state. A marker is suppressed -- its `[ ]`
+ * renders as plain source text -- while the editor is focused and the main
+ * selection touches the marker's span (a collapsed caret on or at either
+ * edge of the span, or a selection overlapping or meeting it at an edge; see
+ * preview-gate.ts). The checked-item dim below is syntax styling and is not
+ * part of the preview, so it never participates in suppression.
+ */
+export function visibleTaskMarkers(
+  state: EditorState,
+  selection: { readonly from: number; readonly to: number },
+  focused: boolean,
+): TaskMarkerInfo[] {
+  const markers = collectTaskMarkers(state);
+  const mask = suppressionMask(markers, selection, focused);
+  return markers.filter((_, index) => !mask[index]);
+}
+
+function computeDecorations(markers: TaskMarkerInfo[], mask: boolean[]): DecorationSet {
   const decos: Range<Decoration>[] = [];
-  for (const marker of markers) {
-    decos.push(
-      // Decoration.replace, not widget: it swaps the marker text for the
-      // checkbox DOM instead of inserting alongside it.
-      Decoration.replace({
-        widget: new TaskCheckboxWidget(marker.from, marker.to, marker.checked),
-      }).range(marker.from, marker.to),
-    );
+  for (let index = 0; index < markers.length; index += 1) {
+    const marker = markers[index];
+    if (!mask[index]) {
+      decos.push(
+        // Decoration.replace, not widget: it swaps the marker text for the
+        // checkbox DOM instead of inserting alongside it.
+        Decoration.replace({
+          widget: new TaskCheckboxWidget(marker.from, marker.to, marker.checked),
+        }).range(marker.from, marker.to),
+      );
+    }
     if (marker.checked) {
       // Dim the whole task line's text (checkbox keeps its own color; the
-      // marker span is hidden behind the widget anyway).
+      // marker span is hidden behind the widget anyway). The dim is syntax
+      // styling, so it stays even while the marker's widget is suppressed.
       decos.push(taskDoneMark.range(marker.from, marker.taskTo));
     }
   }
@@ -148,15 +179,33 @@ function computeDecorations(view: EditorView): DecorationSet {
 const taskCheckboxPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    private markers: TaskMarkerInfo[];
+    private mask: boolean[];
 
     constructor(view: EditorView) {
-      this.decorations = computeDecorations(view);
+      this.markers = collectTaskMarkers(view.state);
+      this.mask = suppressionMask(this.markers, view.state.selection.main, view.hasFocus);
+      this.decorations = computeDecorations(this.markers, this.mask);
     }
 
     update(update: ViewUpdate): void {
+      const view = update.view;
       if (update.docChanged) {
-        this.decorations = computeDecorations(update.view);
+        // Source text changed: re-locate the markers and rebuild in full.
+        this.markers = collectTaskMarkers(view.state);
+        this.mask = suppressionMask(this.markers, view.state.selection.main, view.hasFocus);
+        this.decorations = computeDecorations(this.markers, this.mask);
+        return;
       }
+      // The caret/selection or focus moved without a document change: only
+      // the suppression mask can differ. Skip the rebuild while the mask is
+      // unchanged, so drag-selection churn that never touches a marker span
+      // costs nothing.
+      if (!update.selectionSet && !update.focusChanged) return;
+      const mask = suppressionMask(this.markers, view.state.selection.main, view.hasFocus);
+      if (sameMask(mask, this.mask)) return;
+      this.mask = mask;
+      this.decorations = computeDecorations(this.markers, this.mask);
     }
   },
   { decorations: (view) => view.decorations },

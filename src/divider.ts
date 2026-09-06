@@ -39,8 +39,15 @@
 // The rendering mirrors the task-checkbox extension: a widget replaces the
 // `---` glyphs while the source text stays editable underneath; as soon as
 // the line is no longer exactly `---` the decoration disappears.
+//
+// Like the checkbox, the rule is a preview: while the caret sits on or
+// inside the `---` span -- or while a selection so much as touches it
+// (endpoints included) -- the widget is suppressed and the raw `---` text
+// shows, so the divider row stays visible while edited or selected (see
+// preview-gate.ts).
 
 import { EditorSelection, type EditorState, type Range, type Text } from "@codemirror/state";
+import { sameMask, suppressionMask } from "./preview-gate.ts";
 import {
   Decoration,
   EditorView,
@@ -291,9 +298,29 @@ class DividerWidget extends WidgetType {
   }
 }
 
-function computeDecorations(view: EditorView): DecorationSet {
+/**
+ * The divider rows whose rules should render, given the main selection
+ * extent and the editor's focus state. A divider is suppressed -- its `---`
+ * renders as plain source text -- while the editor is focused and the main
+ * selection touches the divider's span (a collapsed caret on or at either
+ * edge of the span, or a selection overlapping or meeting it at an edge; see
+ * preview-gate.ts).
+ */
+export function visibleDividerRanges(
+  state: EditorState,
+  selection: { readonly from: number; readonly to: number },
+  focused: boolean,
+): DividerInfo[] {
+  const dividers = collectDividerRanges(state);
+  const mask = suppressionMask(dividers, selection, focused);
+  return dividers.filter((_, index) => !mask[index]);
+}
+
+function computeDecorations(dividers: DividerInfo[], mask: boolean[]): DecorationSet {
   const decos: Range<Decoration>[] = [];
-  for (const divider of collectDividerRanges(view.state)) {
+  for (let index = 0; index < dividers.length; index += 1) {
+    if (mask[index]) continue;
+    const divider = dividers[index];
     decos.push(
       Decoration.replace({
         widget: new DividerWidget(),
@@ -306,15 +333,33 @@ function computeDecorations(view: EditorView): DecorationSet {
 const dividerPlugin = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    private dividers: DividerInfo[];
+    private mask: boolean[];
 
     constructor(view: EditorView) {
-      this.decorations = computeDecorations(view);
+      this.dividers = collectDividerRanges(view.state);
+      this.mask = suppressionMask(this.dividers, view.state.selection.main, view.hasFocus);
+      this.decorations = computeDecorations(this.dividers, this.mask);
     }
 
     update(update: ViewUpdate): void {
+      const view = update.view;
       if (update.docChanged) {
-        this.decorations = computeDecorations(update.view);
+        // Source text changed: re-locate the dividers and rebuild in full.
+        this.dividers = collectDividerRanges(view.state);
+        this.mask = suppressionMask(this.dividers, view.state.selection.main, view.hasFocus);
+        this.decorations = computeDecorations(this.dividers, this.mask);
+        return;
       }
+      // The caret/selection or focus moved without a document change: only
+      // the suppression mask can differ. Skip the rebuild while the mask is
+      // unchanged, so drag-selection churn that never touches a divider span
+      // costs nothing.
+      if (!update.selectionSet && !update.focusChanged) return;
+      const mask = suppressionMask(this.dividers, view.state.selection.main, view.hasFocus);
+      if (sameMask(mask, this.mask)) return;
+      this.mask = mask;
+      this.decorations = computeDecorations(this.dividers, this.mask);
     }
   },
   { decorations: (view) => view.decorations },

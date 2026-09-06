@@ -20,6 +20,7 @@ import {
   collectBlocks,
   collectDividerRanges,
   nextSelectionTarget,
+  visibleDividerRanges,
   type Block,
 } from "../src/divider.ts";
 
@@ -358,4 +359,48 @@ test("blockAt always returns the block owning the caret's line", () => {
   assert.equal(CDOC.slice(onDivider.from, onDivider.to), "alpha\n\n---");
   const inBeta = blockAt(state, 13);
   assert.equal(CDOC.slice(inBeta.text!.from, inBeta.text!.to), "beta\ngamma");
+});
+
+// ---- Preview suppression -------------------------------------------------
+// In "alpha\n\n---\n\nbeta" the divider row is line 3 with span [7,10). The
+// gate is endpoint-inclusive: caret/selection touching the span's edges
+// suppresses the rule; an unfocused editor keeps every rule rendered.
+
+function visibleLines(doc: string, from: number, to = from, focused = true): number[] {
+  return visibleDividerRanges(makeState(doc), { from, to }, focused).map((d) => d.line);
+}
+
+const SDOC = "alpha\n\n---\n\nbeta"; // divider on line 3, span [7,10)
+
+test("an unfocused editor renders every divider", () => {
+  assert.deepEqual(visibleLines(SDOC, 8, 8, false), [3]);
+  assert.deepEqual(visibleLines(SDOC, 0, 9, false), [3]);
+});
+
+test("a caret inside or at either edge of the divider span suppresses it", () => {
+  assert.deepEqual(visibleLines(SDOC, 7), []); // at from
+  assert.deepEqual(visibleLines(SDOC, 8), []);
+  assert.deepEqual(visibleLines(SDOC, 9), []);
+  assert.deepEqual(visibleLines(SDOC, 10), []); // at to
+});
+
+test("a caret off the divider keeps it rendered", () => {
+  assert.deepEqual(visibleLines(SDOC, 0), [3]); // in "alpha"
+  assert.deepEqual(visibleLines(SDOC, 6), [3]); // blank line above
+  assert.deepEqual(visibleLines(SDOC, 11), [3]); // blank line below
+  assert.deepEqual(visibleLines(SDOC, 15), [3]); // in "beta"
+});
+
+test("a selection covering, overlapping, or edge-touching the divider suppresses it", () => {
+  assert.deepEqual(visibleLines(SDOC, 7, 10), []); // exactly the divider
+  assert.deepEqual(visibleLines(SDOC, 0, 10), []); // contains it
+  assert.deepEqual(visibleLines(SDOC, 5, 9), []); // overlaps its tail
+  assert.deepEqual(visibleLines(SDOC, 0, 7), []); // ends exactly at from (touch)
+  assert.deepEqual(visibleLines(SDOC, 10, 16), []); // starts exactly at to (touch)
+});
+
+test("a selection away from the divider keeps it rendered", () => {
+  assert.deepEqual(visibleLines(SDOC, 0, 5), [3]); // "alpha"
+  assert.deepEqual(visibleLines(SDOC, 12, 16), [3]); // "beta"
+  assert.deepEqual(visibleLines(SDOC, 11, 11), [3]); // collapsed on the blank below
 });
