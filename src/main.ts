@@ -245,7 +245,7 @@ async function main(): Promise<void> {
         // explicitly instead; Backspace is left to deleteCharBackward so it
         // deletes one character at a time.
         markdown({ extensions: [GFM], addKeymap: false }),
-        indentUnit.of("  "),
+        indentUnit.of("    "),
         EditorView.lineWrapping,
         taskCheckboxExtension(),
         codeFontExtension(),
