@@ -12,6 +12,7 @@
   --dim: #6b7280;
   --inline-code-bg: rgb(175 184 193 / 0.3);
   --inline-code-border: rgb(175 184 193 / 0.55);
+  --divider-fg: #d0d7de;
 }
 
 :root[data-theme="dark"] {
@@ -28,6 +29,7 @@
   --dim: #8b93a1;
   --inline-code-bg: rgb(110 118 129 / 0.35);
   --inline-code-border: rgb(110 118 129 / 0.55);
+  --divider-fg: #4d5566;
 }
 
 /* ---- Editor fonts ----
@@ -620,4 +622,17 @@ body {
 /* Completed task text is dimmed; the checkbox keeps its own color. */
 .cm-task-done {
   opacity: 0.55;
+}
+
+/* Horizontal-rule dividers (see src/divider.ts): the widget replaces the
+   `---` glyphs, so it must fill the line and size like a real rule. The
+   inline-block fills the content width; em margins give it roughly the same
+   vertical footprint as a text line, with the 1px rule centered on it. */
+.cm-divider {
+  display: inline-block;
+  width: 100%;
+  height: 1px;
+  margin: 0.8em 0;
+  background: var(--divider-fg);
+  vertical-align: middle;
 }

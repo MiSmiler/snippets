@@ -33,6 +33,7 @@ import { joinToEvent } from "./undo-history";
 import { wordNavCommands } from "./word-nav";
 import { taskCheckboxExtension } from "./task-checkbox";
 import { codeFontExtension } from "./code-font";
+import { dividerExtension, selectBlockOrAllCommand } from "./divider";
 import {
   DATA_MD,
   freeUntitledName,
@@ -248,6 +249,7 @@ async function main(): Promise<void> {
         EditorView.lineWrapping,
         taskCheckboxExtension(),
         codeFontExtension(),
+        dividerExtension(),
         // High-precedence keymap: Tab indents the whole line (no tab
         // character inserted), Alt+arrows move lines, and the Enter binding
         // falls back to defaultKeymap's insertNewline when not inside a
@@ -313,8 +315,18 @@ async function main(): Promise<void> {
                 return true;
               },
             },
+            // Ctrl+A selects the block the caret is in (`---` divider rows
+            // split the document into blocks); a second press -- or any
+            // state where the whole block is already selected -- selects
+            // everything. Overrides defaultKeymap's selectAll.
+            {
+              key: "Mod-a",
+              run: selectBlockOrAllCommand(),
+            },
           ]),
         ),
+        // defaultKeymap's Mod-a is shadowed by the block-selection command
+        // registered above (higher precedence).
         keymap.of(defaultKeymap),
         // defaultKeymap does not include undo bindings, so without this
         // Mod-z falls through to the WebView's native undo. Registering
