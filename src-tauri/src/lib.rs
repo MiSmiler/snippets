@@ -290,7 +290,7 @@ fn set_dev_window_title<R: tauri::Runtime, M: tauri::Manager<R>>(
     manager: &M,
 ) -> tauri::Result<()> {
     if let Some(window) = manager.get_webview_window("main") {
-        let product = manager.config().product_name.as_deref().unwrap_or("daytasks");
+        let product = manager.config().product_name.as_deref().unwrap_or("snippets");
         window.set_title(&format!("{product} - dev"))?;
     }
     Ok(())
@@ -332,7 +332,7 @@ pub fn run() {
             save_settings
         ])
         .build(tauri::generate_context!())
-        .expect("error while building daytasks")
+        .expect("error while building snippets")
         .run(|app, event| {
             #[cfg(windows)]
             {

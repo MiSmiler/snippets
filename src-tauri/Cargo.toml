@@ -1,11 +1,11 @@
 [package]
-name = "daytasks"
+name = "snippets"
 version = "0.1.0"
 description = "A minimal markdown notepad"
 edition = "2021"
 
 [lib]
-name = "daytasks_lib"
+name = "snippets_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Continue"
-$debugExe = "D:\02_proj\mismiler\daytasks\src-tauri\target\debug\daytasks.exe"
-$releaseExe = "D:\02_proj\mismiler\daytasks\src-tauri\target\release\daytasks.exe"
+$debugExe = "D:\02_proj\mismiler\snippets\src-tauri\target\debug\snippets.exe"
+$releaseExe = "D:\02_proj\mismiler\snippets\src-tauri\target\release\snippets.exe"
 
 Add-Type @"
 using System;
@@ -32,7 +32,7 @@ public class WinEnum {
 
 function Dump($label) {
     Write-Output "== $label =="
-    $procs = Get-Process daytasks -ErrorAction SilentlyContinue
+    $procs = Get-Process snippets -ErrorAction SilentlyContinue
     if (-not $procs) { Write-Output "  (none)"; return }
     foreach ($p in $procs) {
         $titles = [WinEnum]::TitlesOfPid([uint32]$p.Id)
@@ -61,5 +61,5 @@ Start-Sleep 2
 Dump "after 2nd release (expect still 2 total)"
 
 # cleanup
-Get-Process daytasks -ErrorAction SilentlyContinue | Stop-Process
+Get-Process snippets -ErrorAction SilentlyContinue | Stop-Process
 Write-Output "cleaned up"

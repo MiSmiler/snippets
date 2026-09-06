@@ -11,8 +11,8 @@
 //
 // The mutex / window class / window names are derived from the app
 // identifier with a `-debug` suffix for debug builds:
-//   release: com.mismiler.daytasks-sim
-//   debug:   com.mismiler.daytasks-debug-sim
+//   release: com.mismiler.snippets-sim
+//   debug:   com.mismiler.snippets-debug-sim
 //
 // NOTE: Windows-only. Linux/macOS single-instance support is intentionally
 // not implemented yet; on those platforms this module compiles to a no-op.

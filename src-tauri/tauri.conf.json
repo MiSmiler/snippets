@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "daytasks",
+  "productName": "snippets",
   "version": "0.1.0",
-  "identifier": "com.mismiler.daytasks",
+  "identifier": "com.mismiler.snippets",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "daytasks",
+        "title": "snippets",
         "width": 900,
         "height": 700,
         "minWidth": 480,

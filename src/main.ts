@@ -111,7 +111,7 @@ const MOD_LABEL = IS_MAC ? "Cmd" : "Ctrl";
 // Vite dev server port (see vite.config.ts); release builds load from the
 // Tauri asset protocol instead.
 const IS_DEV = window.location.port === "1420";
-const BASE_TITLE = IS_DEV ? "daytasks - dev" : "daytasks";
+const BASE_TITLE = IS_DEV ? "snippets - dev" : "snippets";
 
 function normalizeSettings(raw: unknown): NormalizedSettings {
   const obj = (raw ?? {}) as Record<string, unknown>;

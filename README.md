@@ -1,4 +1,4 @@
-# daytasks
+# snippets
 
 > [!ATTENTION]
 > 本项目是完全「vibecoding」出来的：整个应用（界面、逻辑、构建、图标……）均由 AI 生成并反复迭代，未经人工逐行审阅。请把它当作参考实现或灵感来源，生产使用前务必自行审查代码、数据与安全边界。
@@ -27,7 +27,7 @@ npm test             # 单元测试（node --test tests/）
 npm run icon         # 重新生成应用图标（light + dark 两套）
 ```
 
-- 产物：`src-tauri/target/release/daytasks.exe`
+- 产物：`src-tauri/target/release/snippets.exe`
 - 开发模式的笔记在 `src-tauri/target/debug/` 下，与正式数据隔离
 - 单实例限制按构建类型隔离（见 `single_instance.rs`）：`npm run tauri dev` 的调试版可与日常使用的 release 版同时运行，互不抢占；dev 窗口标题带 `- dev` 后缀便于区分
 
