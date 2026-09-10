@@ -19,6 +19,10 @@ serde_json = "1"
 # (enabled by default) embeds the dictionary in the binary, keeping the app a
 # single portable exe with no extra data files.
 jieba-rs = "0.10"
+# Opens http(s) links in the system default browser (Ctrl/Cmd+Click in the
+# editor). The frontend allowlist is mirrored by the plugin's capability
+# scope, so only the two schemes can ever reach the OS.
+tauri-plugin-opener = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

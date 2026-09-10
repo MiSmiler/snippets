@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   drawSelection,
   dropCursor,
@@ -28,7 +29,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { insertNewlineContinueMarkupCommand } from "./markdown-enter";
 import { insertLineAboveCommand } from "./insert-line";
 import { GFM } from "@lezer/markdown";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { oneDarkHighlightStyle, oneDarkTheme } from "@codemirror/theme-one-dark";
 import { joinToEvent } from "./undo-history";
 import {
   createJiebaProvider,
@@ -41,6 +42,7 @@ import {
 import { taskCheckboxExtension } from "./task-checkbox";
 import { codeFontExtension } from "./code-font";
 import { dividerExtension, selectBlockOrAllCommand } from "./divider";
+import { linkOpenExtension, withoutLinkUnderline } from "./link-open";
 import { reconfigureScrollCushion, scrollPastEndExtension } from "./scroll-past-end";
 import {
   DATA_MD,
@@ -229,7 +231,19 @@ async function main(): Promise<void> {
   let wordSeg = settings.word_seg;
   const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
 
-  const darkTheme = new Compartment();
+  // Theme-exclusive highlight styles. The stock light style is registered as
+  // a fallback, and any non-fallback highlighter suppresses fallbacks
+  // entirely, so keeping exactly one `syntaxHighlighting` per theme is what
+  // holds dark mode to oneDark's colors. Both variants use
+  // `withoutLinkUnderline`: the link extension draws that underline itself,
+  // on hover only (see link-open.ts).
+  const lightColors = [syntaxHighlighting(withoutLinkUnderline(defaultHighlightStyle))];
+  const darkColors = [
+    oneDarkTheme,
+    syntaxHighlighting(withoutLinkUnderline(oneDarkHighlightStyle)),
+  ];
+
+  const colorScheme = new Compartment();
   const fontTheme = new Compartment();
 
   // Active word-segmentation engine for the editor keymap (see word-nav.ts).
@@ -263,7 +277,7 @@ async function main(): Promise<void> {
 
   function currentVisualEffects() {
     return [
-      darkTheme.reconfigure(effectiveTheme() === "dark" ? oneDark : []),
+      colorScheme.reconfigure(effectiveTheme() === "dark" ? darkColors : lightColors),
       fontTheme.reconfigure(EditorView.theme({ "&": { fontSize: `${fontSize}px` } })),
       reconfigureScrollCushion(fontSize),
     ];
@@ -335,7 +349,6 @@ async function main(): Promise<void> {
         drawSelection(),
         dropCursor(),
         indentOnInput(),
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         // addKeymap: false: markdown() would otherwise register its own
         // Prec.high keymap (Enter -> unconfigured insertNewlineContinueMarkup,
         // Backspace -> deleteMarkupBackward) before the keymap below. At
@@ -349,6 +362,13 @@ async function main(): Promise<void> {
         taskCheckboxExtension(),
         codeFontExtension(),
         dividerExtension(),
+        // Ctrl/Cmd+Click on a recognized http(s) link opens it in the system
+        // default browser (see link-open.ts).
+        linkOpenExtension({
+          modOf: (event) => (IS_MAC ? event.metaKey : event.ctrlKey),
+          open: (url) => openUrl(url),
+          onError: (url, error) => showToast(`Cannot open ${url}: ${errMessage(error)}`),
+        }),
         // High-precedence keymap: Tab indents the whole line (no tab
         // character inserted), Alt+arrows move lines, and the Enter binding
         // falls back to defaultKeymap's insertNewline when not inside a
@@ -435,7 +455,7 @@ async function main(): Promise<void> {
         // Mod-z falls through to the WebView's native undo. Registering
         // historyKeymap handles undo/redo directly in the CodeMirror keymap.
         keymap.of(historyKeymap),
-        darkTheme.of(effectiveTheme() === "dark" ? oneDark : []),
+        colorScheme.of(effectiveTheme() === "dark" ? darkColors : lightColors),
         EditorView.updateListener.of((update) => {
           const tab = tabs[activeIndex];
           if (!tab) return;

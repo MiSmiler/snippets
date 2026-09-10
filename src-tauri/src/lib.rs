@@ -320,6 +320,10 @@ fn set_dev_window_title<R: tauri::Runtime, M: tauri::Manager<R>>(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Opening http(s) links in the system default browser (Ctrl/Cmd+Click
+        // in the editor). The reachable schemes are pinned by the
+        // `opener:allow-open-url` scope in capabilities/default.json.
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Load the jieba dictionary on a background thread so the first
             // word-navigation keystroke never waits on it.

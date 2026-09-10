@@ -5,6 +5,13 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "core:window:allow-destroy"
+    "core:window:allow-destroy",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "http://*" },
+        { "url": "https://*" }
+      ]
+    }
   ]
 }

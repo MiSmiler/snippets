@@ -632,6 +632,19 @@ body {
   opacity: 0.55;
 }
 
+/* Link affordance (see src/link-open.ts): hovering a recognized http(s)
+   link underlines it, and holding the platform modifier also turns the
+   cursor into a pointer to advertise Ctrl/Cmd+Click. Links carry no
+   underline otherwise -- both themes strip the stock `Link`/`Image`
+   underline via `withoutLinkUnderline`, so these are the only link rules. */
+.cm-link-hover {
+  text-decoration: underline;
+}
+
+.cm-link-mod {
+  cursor: pointer;
+}
+
 /* Horizontal-rule dividers (see src/divider.ts): the widget replaces the
    `---` glyphs, so it must fill the line and size like a real rule. The
    inline-block fills the content width; em margins give it roughly the same
