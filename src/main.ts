@@ -76,6 +76,7 @@ interface NormalizedSettings {
   scale: number;
   theme: ThemeChoice;
   word_seg: WordSegChoice;
+  line_numbers: boolean;
   open_files: string[] | null;
   active_file: string | null;
 }
@@ -168,7 +169,10 @@ function normalizeSettings(raw: unknown): NormalizedSettings {
     obj.word_seg === "system" || obj.word_seg === "jieba-standard" || obj.word_seg === "jieba-fine"
       ? obj.word_seg
       : DEFAULT_WORD_SEG;
-  return { font_size, scale, theme, word_seg, open_files, active_file };
+  // Only a literal `true` shows the gutter; a missing key (settings.json
+  // written before this option existed) means hidden.
+  const line_numbers = obj.line_numbers === true;
+  return { font_size, scale, theme, word_seg, line_numbers, open_files, active_file };
 }
 
 // ---- Word-segmentation engine selection --------------------------------
@@ -229,6 +233,7 @@ async function main(): Promise<void> {
   let scale = settings.scale;
   let theme = settings.theme;
   let wordSeg = settings.word_seg;
+  let lineNumbersOn = settings.line_numbers;
   const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
 
   // Theme-exclusive highlight styles. The stock light style is registered as
@@ -245,6 +250,10 @@ async function main(): Promise<void> {
 
   const colorScheme = new Compartment();
   const fontTheme = new Compartment();
+  // Line numbers and the active-line gutter decoration are one visual unit:
+  // `highlightActiveLineGutter` only decorates the number cells, so it is
+  // pointless without `lineNumbers`. Both are toggled from the settings panel.
+  const gutterCompartment = new Compartment();
 
   // Active word-segmentation engine for the editor keymap (see word-nav.ts).
   // Re-resolved on change so the next keystroke in every tab uses the new
@@ -279,8 +288,13 @@ async function main(): Promise<void> {
     return [
       colorScheme.reconfigure(effectiveTheme() === "dark" ? darkColors : lightColors),
       fontTheme.reconfigure(EditorView.theme({ "&": { fontSize: `${fontSize}px` } })),
+      gutterCompartment.reconfigure(gutterExtensions()),
       reconfigureScrollCushion(fontSize),
     ];
+  }
+
+  function gutterExtensions() {
+    return lineNumbersOn ? [lineNumbers(), highlightActiveLineGutter()] : [];
   }
 
   function setTheme(next: ThemeChoice): void {
@@ -331,6 +345,13 @@ async function main(): Promise<void> {
     persistSoon();
   }
 
+  function setLineNumbers(next: boolean): void {
+    if (next === lineNumbersOn) return;
+    lineNumbersOn = next;
+    refreshStates();
+    persistSoon();
+  }
+
   // Word navigation (Ctrl+Arrow on Windows/Linux, Option+Arrow on macOS, +Shift
   // selection, +Backspace/Delete deletion) jumps between Chinese words instead
   // of skipping a whole CJK run. `mac:` swaps the modifier like CodeMirror's
@@ -342,8 +363,7 @@ async function main(): Promise<void> {
     return EditorState.create({
       doc,
       extensions: [
-        lineNumbers(),
-        highlightActiveLineGutter(),
+        gutterCompartment.of(gutterExtensions()),
         highlightActiveLine(),
         history({ joinToEvent }),
         drawSelection(),
@@ -472,7 +492,7 @@ async function main(): Promise<void> {
           ".cm-scroller": { lineHeight: "1.65" },
           // Prose (Chinese + English) renders in the proportional font stack;
           // markdown code regions are switched to --font-code by code-font.ts.
-          ".cm-content": { fontFamily: "var(--font-prose)", padding: "14px 0" },
+          ".cm-content": { fontFamily: "var(--font-prose)", padding: "14px 16px" },
           "&.cm-focused": { outline: "none" },
         }),
         fontTheme.of(EditorView.theme({ "&": { fontSize: `${fontSize}px` } })),
@@ -610,6 +630,7 @@ async function main(): Promise<void> {
       scale,
       theme,
       word_seg: wordSeg,
+      line_numbers: lineNumbersOn,
       open_files: tabs.map((t) => t.name),
       active_file: activeIndex >= 0 ? tabs[activeIndex].name : null,
     };
@@ -1507,6 +1528,11 @@ async function main(): Promise<void> {
   wordSegSelect.value = wordSeg;
   wordSegSelect.addEventListener("change", () => {
     setWordSeg(wordSegSelect.value as WordSegChoice);
+  });
+  const lineNumbersToggle = document.getElementById("line-numbers-toggle") as HTMLInputElement;
+  lineNumbersToggle.checked = lineNumbersOn;
+  lineNumbersToggle.addEventListener("change", () => {
+    setLineNumbers(lineNumbersToggle.checked);
   });
   document.addEventListener("pointerdown", (event) => {
     if (!settingsEl.hidden && !settingsEl.contains(event.target as Node)) closeSettings();

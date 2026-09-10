@@ -237,6 +237,10 @@ pub struct Settings {
     /// Word-segmentation engine for word navigation: "system" (WebView's
     /// Intl.Segmenter), "jieba-standard", or "jieba-fine".
     pub word_seg: String,
+    /// Show line numbers in the editor gutter. Off by default: the struct's
+    /// `#[serde(default)]` turns an absent key into `false`, so settings files
+    /// written before this option existed start with the gutter hidden.
+    pub line_numbers: bool,
     /// Last session: note file names in tab order. `None` (absent in the
     /// JSON) means no session was ever recorded -- a fresh install or an
     /// upgrade from the single-file era -- and the frontend falls back to
@@ -253,6 +257,7 @@ impl Default for Settings {
             scale: DEFAULT_SCALE,
             theme: "system".to_string(),
             word_seg: DEFAULT_WORD_SEG.to_string(),
+            line_numbers: false,
             open_files: None,
             active_file: None,
         }
@@ -292,6 +297,7 @@ fn save_settings(settings: Settings) -> Result<(), String> {
         scale: settings.scale.clamp(MIN_SCALE, MAX_SCALE),
         theme,
         word_seg,
+        line_numbers: settings.line_numbers,
         open_files,
         active_file: settings.active_file,
     };

@@ -3,7 +3,7 @@
   --bg: #ffffff;
   --fg: #1f2937;
   --gutter-bg: #f6f8fa;
-  --gutter-fg: #9aa4b0;
+  --gutter-fg: #c3c8d1;
   --card-bg: #ffffff;
   --card-border: #e5e7eb;
   --btn-bg: #f3f4f6;
@@ -20,7 +20,7 @@
   --bg: #282c34;
   --fg: #abb2bf;
   --gutter-bg: #23262e;
-  --gutter-fg: #5c6370;
+  --gutter-fg: #454b55;
   --card-bg: #2c313a;
   --card-border: #3e4451;
   --btn-bg: #3a4048;
@@ -218,12 +218,35 @@ body {
   background: var(--bg);
 }
 
-.cm-gutters {
-  background: var(--gutter-bg);
+/* ---- Editor overrides vs CodeMirror's base theme ----
+
+   CodeMirror's baseTheme emits two-class selectors (`.cm-<id> .cm-gutters`,
+   `.cm-<lightID> .cm-activeLineGutter`), so a bare one-class rule such as
+   `.cm-gutters` is silently overridden no matter how late it loads. Editor
+   overrides therefore either go into an `EditorView.theme` module in main.ts
+   (which wins by being mounted after the base theme) or, from this
+   stylesheet, need the `#editor` id prefix. */
+#editor .cm-gutters {
+  /* Flatten the strip against the page background: only the numbers should
+     read as editor chrome, not a band of its own. */
+  background: var(--bg);
   color: var(--gutter-fg);
   border-right: none;
   /* Line numbers stay in the code font even though prose is proportional. */
   font-family: var(--font-code);
+}
+
+/* CodeMirror always creates `.cm-gutters`, even with no gutter registered
+   (view/dist/index.js, `gutterView`), so without this the disabled toggle
+   would leave an empty strip of gutter background behind. */
+#editor .cm-gutters:empty {
+  display: none;
+}
+
+/* The active-line hint already lives in the body (highlightActiveLine), and
+   CodeMirror's default here is a blue-tinted cell of its own. */
+#editor .cm-activeLineGutter {
+  background: transparent;
 }
 
 /* Markdown code regions (.cm-code from src/code-font.ts):
@@ -245,10 +268,6 @@ body {
   padding: 0 0.15em;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
-}
-
-.cm-activeLineGutter {
-  background: transparent;
 }
 
 #empty {
@@ -369,6 +388,14 @@ body {
 
 .settings-row button:hover {
   background: var(--btn-hover);
+}
+
+.settings-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--dim);
+  cursor: pointer;
 }
 
 #font-size-value,
