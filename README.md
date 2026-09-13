@@ -65,6 +65,7 @@ npm run icon         # 重新生成应用图标（light + dark 两套）
 | `Ctrl+←` / `Ctrl+→` | 光标按词移动（中文按词分词） |
 | `Ctrl+Shift+←` / `Ctrl+Shift+→` | 按词扩展选区 |
 | `Ctrl+Backspace` / `Ctrl+Delete` | 按词删除 |
+| 双击 | 选中双击处的词（中文按分词引擎选词；`foo_bar`、`foo-bar` 这类标识符整体选中；双击后拖拽按词扩展选区） |
 
 ### 界面与设置
 

@@ -36,6 +36,7 @@ import {
   createNoopProvider,
   createSystemProvider,
   wordNavCommands,
+  wordSelectionStyle,
   type SegRange,
   type SegmentProvider,
 } from "./word-nav";
@@ -389,6 +390,12 @@ async function main(): Promise<void> {
           open: (url) => openUrl(url),
           onError: (url, error) => showToast(`Cannot open ${url}: ${errMessage(error)}`),
         }),
+        // Double-click selects a segmented word instead of CodeMirror's whole
+        // CJK Word run, using the same engine as word navigation (see
+        // wordSelectionStyle). Plain clicks, triple clicks and Shift+click
+        // stay on CodeMirror's defaults; dragging after a double click spans
+        // words rather than runs.
+        wordSelectionStyle(() => wordSegProvider),
         // High-precedence keymap: Tab indents the whole line (no tab
         // character inserted), Alt+arrows move lines, and the Enter binding
         // falls back to defaultKeymap's insertNewline when not inside a

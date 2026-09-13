@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Text } from "@codemirror/state";
-import { charCategory, createSystemProvider, deleteTargetByWord, moveByWord } from "../src/word-nav.ts";
+import { charCategory, createJiebaProvider, createSystemProvider, deleteTargetByWord, moveByWord, wordRangeAt, type SegRange } from "../src/word-nav.ts";
 
 // The system provider wraps Intl.Segmenter, so these golden tests keep
 // asserting the exact pre-existing (ICU) behavior.
@@ -160,4 +160,101 @@ test("delete forward deletes one Chinese word", () => {
 test("delete forward keeps CodeMirror's behavior for Latin text", () => {
   assert.equal(delFwd("foo bar", 0), 3);
   assert.equal(delFwd("foo bar", 4), 7); // deletes "bar", not the space before
+});
+
+// ---- Double-click selection (wordRangeAt) ----
+
+const rangeAt = (text: string, pos: number, bias = 1, p = provider) => {
+  const r = wordRangeAt(doc(text), pos, bias, p);
+  return [r.from, r.to];
+};
+
+test("double click selects the segmented word inside Chinese text", () => {
+  assert.deepEqual(rangeAt("你好世界", 0), [0, 2]);
+  assert.deepEqual(rangeAt("你好世界", 1), [0, 2]);
+  assert.deepEqual(rangeAt("你好世界", 2), [2, 4]);
+  assert.deepEqual(rangeAt("你好世界", 3), [2, 4]);
+  assert.deepEqual(rangeAt("你好世界", 4), [2, 4]); // line end biases left
+});
+
+test("double click at a word boundary follows the click side", () => {
+  assert.deepEqual(rangeAt("你好世界", 2, -1), [0, 2]);
+  assert.deepEqual(rangeAt("你好世界", 2, 1), [2, 4]);
+  assert.deepEqual(rangeAt("你好世界", 0, -1), [0, 2]); // line start biases right
+});
+
+test("double click on punctuation keeps CodeMirror's run", () => {
+  assert.deepEqual(rangeAt("你好，世界", 2), [2, 3]); // the comma itself
+  assert.deepEqual(rangeAt("你好。。世界", 2), [2, 4]); // run of same-category marks
+});
+
+test("mixed runs use the engine's word on both sides", () => {
+  assert.deepEqual(rangeAt("hello世界", 0), [0, 5]);
+  assert.deepEqual(rangeAt("hello世界", 3), [0, 5]);
+  assert.deepEqual(rangeAt("hello世界", 5), [5, 7]);
+  assert.deepEqual(rangeAt("世界hello", 2), [2, 7]);
+  assert.deepEqual(rangeAt("abc中文def", 3), [3, 5]);
+});
+
+test("identifiers are selected whole, with or without Chinese around them", () => {
+  // jieba splits foo_bar at "_" and CodeMirror splits foo-bar at "-"; both
+  // should come out as one name, wherever the click lands inside them.
+  const line = "给我解释一下foo_bar的实现细节";
+  assert.deepEqual(rangeAt(line, 6), [6, 13]); // the "f"
+  assert.deepEqual(rangeAt(line, 8), [6, 13]);
+  assert.deepEqual(rangeAt(line, 9), [6, 13]); // the "_"
+  assert.deepEqual(rangeAt(line, 12), [6, 13]); // the "r"
+  const dashed = "给我解释一下foo-bar的实现细节";
+  assert.deepEqual(rangeAt(dashed, 6), [6, 13]);
+  assert.deepEqual(rangeAt(dashed, 9), [6, 13]); // the "-"
+  assert.deepEqual(rangeAt("foo-bar", 0), [0, 7]);
+  assert.deepEqual(rangeAt("a-b-c", 1), [0, 5]);
+  assert.deepEqual(rangeAt("café-bar", 0), [0, 8]); // non-ASCII letters count too
+  assert.deepEqual(rangeAt("2024-01-01", 0), [0, 10]);
+});
+
+test("identifier edges do not swallow separators or CJK", () => {
+  assert.deepEqual(rangeAt("foo - bar", 0), [0, 3]);
+  assert.deepEqual(rangeAt("你好-foo", 4), [3, 6]); // leading "-" is not part of the name
+  assert.deepEqual(rangeAt("foo-你好", 0), [0, 3]); // CJK on the other side stops it
+  assert.deepEqual(rangeAt("---", 0), [0, 3]); // no word characters: plain run
+  assert.deepEqual(rangeAt("foo-", 3), [3, 4]); // the trailing "-" itself
+  assert.deepEqual(rangeAt("foo.bar", 0), [0, 3]); // "." is not a name character
+  assert.deepEqual(rangeAt("C++", 0), [0, 1]);
+});
+
+test("pure Latin/number runs keep CodeMirror's exact range", () => {
+  assert.deepEqual(rangeAt("foo_bar", 0), [0, 7]);
+  assert.deepEqual(rangeAt("3.14", 0), [0, 1]);
+  assert.deepEqual(rangeAt("don't", 0), [0, 3]);
+  assert.deepEqual(rangeAt("v1.2.3", 0), [0, 2]);
+  assert.deepEqual(rangeAt("hello world", 6), [6, 11]);
+  assert.deepEqual(rangeAt("emoji😀test", 0), [0, 5]);
+});
+
+test("double click in an empty line selects nothing", () => {
+  assert.deepEqual(rangeAt("", 0), [0, 0]);
+});
+
+test("double click falls back to the system provider while jieba is in flight", () => {
+  const jieba = createJiebaProvider("standard", provider, () => Promise.resolve(null));
+  // Nothing cached yet: the system provider's boundaries apply to this click.
+  assert.deepEqual(rangeAt("你好世界", 0, 1, jieba), [0, 2]);
+});
+
+test("double click follows jieba once its segments are cached", async () => {
+  const jiebaSegs: SegRange[] = [
+    { start: 0, end: 5 }, // snake
+    { start: 6, end: 10 }, // case
+    { start: 11, end: 13 }, // 中文
+  ];
+  const jieba = createJiebaProvider("standard", provider, () => Promise.resolve(jiebaSegs));
+  jieba.segment("snake_case_中文"); // warm the cache
+  await new Promise((r) => setTimeout(r, 0));
+
+  // The Chinese part follows jieba...
+  assert.deepEqual(rangeAt("snake_case_中文", 12, 1, jieba), [11, 13]);
+  // ...while the identifier is one unit even though jieba cuts it at "_".
+  assert.deepEqual(rangeAt("snake_case_中文", 0, 1, jieba), [0, 11]);
+  assert.deepEqual(rangeAt("snake_case_中文", 5, 1, jieba), [0, 11]);
 });

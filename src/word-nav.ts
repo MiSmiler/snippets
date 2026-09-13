@@ -20,6 +20,7 @@ import {
   EditorSelection,
   findClusterBreak,
   type EditorState,
+  type Extension,
   type SelectionRange,
   type Text,
 } from "@codemirror/state";
@@ -56,10 +57,12 @@ export function charCategory(cluster: string): Category {
 }
 
 // Character classes that get Intl.Segmenter word boundaries: CJK ideographs
-// (incl. extension A and B), kana, and Hangul. The u flag is required for
-// the astral-plane escape \u20000-\u2FA1F to be parsed as a range.
+// (incl. extension A and B), kana, and Hangul. Astral-plane code points
+// (extension B and beyond) need the \u{...} form: \u20000 would parse as
+// \u2000 followed by a literal "0", turning the class into the range
+// U+0030-U+2FA1 and making every ASCII letter or digit "CJK".
 const CJK_RE =
-  /[\u2E80-\u2EFF\u3040-\u30FF\u31C0-\u31EF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF66-\uFF9F\uAC00-\uD7AF\u20000-\u2FA1F]/u;
+  /[\u2E80-\u2EFF\u3040-\u30FF\u31C0-\u31EF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF66-\uFF9F\uAC00-\uD7AF\u{20000}-\u{2FA1F}]/u;
 
 export interface WordSegment {
   start: number;
@@ -304,6 +307,150 @@ export function deleteTargetByWord(doc: Text, pos: number, forward: boolean, pro
     p = next;
   }
   return line.from + p;
+}
+
+// ---- Double-click word selection ----
+
+// True for a grapheme cluster that can be part of a Latin identifier: a
+// CodeMirror Word cluster (letter, digit, "_", or a non-ASCII case-pair
+// letter) that is not CJK, or the separator "-" between two such clusters.
+function isIdentifierCluster(cluster: string): boolean {
+  return cluster == "-" || (charCategory(cluster) == "Word" && !hasCJK(cluster));
+}
+
+// The identifier around `probe`: a maximal run of identifier clusters with
+// leading/trailing "-" trimmed off ("foo-" yields "foo", "---" yields
+// nothing). Null when `probe` itself sits on a trimmed separator, or when
+// only separators are left.
+function identifierAt(lineText: string, probe: number): { from: number; to: number } | null {
+  const isIdent = (from: number, to: number) => isIdentifierCluster(lineText.slice(from, to));
+  let end = findClusterBreak(lineText, probe, true);
+  if (!isIdent(probe, end)) return null;
+  let start = probe;
+  while (start > 0) {
+    const prev = findClusterBreak(lineText, start, false);
+    if (!isIdent(prev, start)) break;
+    start = prev;
+  }
+  while (end < lineText.length) {
+    const next = findClusterBreak(lineText, end, true);
+    if (!isIdent(end, next)) break;
+    end = next;
+  }
+  while (start < end && lineText[start] == "-") start++;
+  while (end > start && lineText[end - 1] == "-") end--;
+  if (start >= end || probe < start || probe >= end) return null;
+  return { from: start, to: end };
+}
+
+// Selection range for a double click at `pos`, in three steps:
+//
+//   1. An identifier at the click: "foo_bar", "foo-bar", "café-bar" and
+//      "2024-01-01" come out whole. CodeMirror's charCategorizer splits at
+//      "-", and jieba splits at "_"; technical notes are full of both.
+//   2. Otherwise CodeMirror's own groupAt() run around the clicked cluster
+//      (punctuation, spaces, emoji), which is also the fallback below.
+//   3. Inside a Word run, the segmentation engine's word at the click. That
+//      is what makes double clicking a word inside 中文 select that word
+//      instead of the whole CJK run; a position the engine has no word for
+//      keeps the run, which is also what an unavailable engine
+//      (createNoopProvider) produces.
+//
+// groupAt() is reproduced here because @codemirror/view does not export it;
+// keep this in sync with its groupAt() (dist/index.js).
+export function wordRangeAt(
+  doc: Text,
+  pos: number,
+  bias: number,
+  provider: SegmentProvider,
+): { from: number; to: number } {
+  const line = doc.lineAt(pos);
+  const linePos = pos - line.from;
+  if (line.length == 0) return { from: pos, to: pos };
+  // CodeMirror biases away from the line edges.
+  if (linePos == 0) bias = 1;
+  else if (linePos == line.length) bias = -1;
+
+  // The cluster the click picked: left of the cursor when bias < 0.
+  let from = linePos;
+  let to = linePos;
+  if (bias < 0) from = findClusterBreak(line.text, linePos, false);
+  else to = findClusterBreak(line.text, linePos, true);
+  const probe = from; // start of that cluster, before any run is expanded
+
+  const ident = identifierAt(line.text, probe);
+  if (ident) return { from: line.from + ident.from, to: line.from + ident.to };
+
+  const cat = charCategory(line.text.slice(from, to));
+  while (from > 0) {
+    const prev = findClusterBreak(line.text, from, false);
+    if (charCategory(line.text.slice(prev, from)) != cat) break;
+    from = prev;
+  }
+  while (to < line.length) {
+    const next = findClusterBreak(line.text, to, true);
+    if (charCategory(line.text.slice(to, next)) != cat) break;
+    to = next;
+  }
+
+  if (cat == "Word") {
+    const seg = segmentAt(provider.segment(line.text), probe);
+    if (seg) return { from: line.from + seg.start, to: line.from + seg.end };
+  }
+  return { from: line.from + from, to: line.from + to };
+}
+
+// Mouse selection style that makes a double click select a segmented word
+// (see wordRangeAt). Only double clicks are taken over: plain clicks, triple
+// clicks, Shift+click and start-of-drag selections return null here and keep
+// CodeMirror's basicMouseSelection untouched. Dragging after the double
+// click still runs through the style below, so the two ends of the drag are
+// merged word-wise (same shape as basicMouseSelection, which is not
+// exported either).
+export function wordSelectionStyle(getProvider: () => SegmentProvider): Extension {
+  return EditorView.mouseSelectionStyle.of((view, event) => {
+    if (event.button != 0 || event.detail != 2) return null;
+    // The click that started this gesture, in document coordinates.
+    const start = view.posAndSideAtCoords({ x: event.clientX, y: event.clientY }, false);
+    let startSel = view.state.selection;
+    const rangeAt = (pos: number, assoc: number) => {
+      const range = wordRangeAt(view.state.doc, pos, assoc, getProvider());
+      return EditorSelection.undirectionalRange(range.from, range.to);
+    };
+    return {
+      update(update) {
+        // Keep the anchor meaningful if the document changes mid-drag, like
+        // basicMouseSelection does.
+        if (update.docChanged) {
+          start.pos = update.changes.mapPos(start.pos);
+          startSel = startSel.map(update.changes);
+        }
+        return false;
+      },
+      get(curEvent, extend, multiple) {
+        const cur = view.posAndSideAtCoords({ x: curEvent.clientX, y: curEvent.clientY }, false);
+        // The pointer moved away from where the gesture started: span from
+        // the word under the start point to the word under the pointer.
+        let range = rangeAt(cur.pos, cur.assoc);
+        if (start.pos != cur.pos && !extend) {
+          const startRange = rangeAt(start.pos, start.assoc);
+          const from = Math.min(startRange.from, range.from);
+          const to = Math.max(startRange.to, range.to);
+          // Copied verbatim from basicMouseSelection: its third argument
+          // lands in goalColumn, which is irrelevant for a horizontal drag.
+          range =
+            from < range.from
+              ? EditorSelection.range(from, to, range.assoc)
+              : EditorSelection.range(to, from, range.assoc);
+        }
+        if (extend) return startSel.replaceRange(startSel.main.extend(range.from, range.to, range.assoc));
+        // allowMultipleSelections is not enabled in this app, so the
+        // `multiple` branch of basicMouseSelection is unreachable.
+        void multiple;
+        return EditorSelection.create([range]);
+      },
+    };
+  });
 }
 
 // ---- CodeMirror command wrappers (ports of moveSel / extendSel / deleteBy) ----
